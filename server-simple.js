@@ -7,7 +7,6 @@ const express = require('express');
 // const cors = require('cors'); // Not needed - using manual CORS headers
 const mongoose = require('mongoose');
 const Settings = require('./src/models/settings.js');
-const settingsRoutes = require('./src/routes/settings');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -160,36 +159,6 @@ app.options('/api/settings', (req, res) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.sendStatus(200);
-});
-
-// Settings endpoints - PHASE 9F CLEAN IMPLEMENTATION
-app.get('/api/settings', async (req, res) => {
-  try {
-    console.log('⚙️  [SETTINGS] GET request received');
-    const data = await Settings.findOne().sort({ updatedAt: -1 }).lean();
-    console.log('⚙️  [SETTINGS] Retrieved:', data);
-    res.json(data || {});
-  } catch (err) {
-    console.error('[SETTINGS GET ERROR]', err);
-    res.status(500).json({ error: 'Failed to get settings' });
-  }
-});
-
-app.post('/api/settings', async (req, res) => {
-  try {
-    console.log('⚙️  [SETTINGS] POST request received');
-    console.log('⚙️  [SETTINGS] Request body:', JSON.stringify(req.body, null, 2));
-    
-    await Settings.deleteMany(); // clear existing to avoid confusion
-    const newSettings = new Settings(req.body);
-    await newSettings.save();
-    
-    console.log('⚙️  [SETTINGS] Settings saved successfully');
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[SETTINGS POST ERROR]', err);
-    res.status(500).json({ error: 'Failed to save settings' });
-  }
 });
 
 // Chart status endpoint
