@@ -42,14 +42,7 @@ app.use(cors({
   optionsSuccessStatus: 200 // For legacy browsers
 }));
 
-// Handle preflight requests explicitly
-app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.sendStatus(200);
-});
+// Preflight requests are handled by the CORS middleware above
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
