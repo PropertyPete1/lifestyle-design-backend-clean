@@ -11,9 +11,23 @@ const Settings = require('./src/models/settings.js');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// ✅ ABSOLUTE CORS FIX — APPLIES TO ALL ROUTES
+// ✅ EXPANDED CORS CONFIG FOR ALL VERCEL DEPLOYMENTS
+const allowedOrigins = [
+  'https://lifestyle-design-frontend-v2.vercel.app',
+  'https://lifestyle-design-social.vercel.app', 
+  'https://frontend-v2-sage.vercel.app',
+  'https://peter-allens-projects.vercel.app',
+  'http://localhost:3000'
+];
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', 'https://lifestyle-design-frontend-v2.vercel.app');
+  const origin = req.headers.origin;
+  
+  // Allow if no origin (Postman/curl) or if origin is in allowed list or contains vercel.app
+  if (!origin || allowedOrigins.includes(origin) || (origin && origin.includes('vercel.app'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+  
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
