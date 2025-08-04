@@ -29,6 +29,44 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ✅ SETTINGS ROUTES FOR FRONTEND SAVE/LOAD
+const Settings = require('./src/models/settings.js');
+
+app.get('/api/settings', async (req, res) => {
+  try {
+    console.log('⚙️ [SETTINGS] GET /api/settings request received');
+    const settings = await Settings.findOne();
+    console.log('⚙️ [SETTINGS] Retrieved settings:', settings);
+    res.json(settings || {});
+  } catch (err) {
+    console.error('❌ [SETTINGS] GET error:', err);
+    res.status(500).json({ error: 'Failed to load settings' });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    console.log('⚙️ [SETTINGS] POST /api/settings request received');
+    console.log('⚙️ [SETTINGS] Request body:', JSON.stringify(req.body, null, 2));
+    
+    const existing = await Settings.findOne();
+    if (existing) {
+      await Settings.updateOne({}, req.body);
+      console.log('⚙️ [SETTINGS] Settings updated successfully');
+    } else {
+      const newSettings = new Settings(req.body);
+      await newSettings.save();
+      console.log('⚙️ [SETTINGS] Settings created successfully');
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ [SETTINGS] POST error:', err);
+    res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+console.log('✅ Settings routes registered in server.js');
+
 // MongoDB connection
 const connectDB = async () => {
   try {
@@ -248,6 +286,8 @@ const startServer = async () => {
     console.log('🚀 [SERVER] Backend v2 running on port', PORT);
     console.log('📋 [SERVER] Available endpoints:');
     console.log('   GET  /api/health - Health check');
+    console.log('   ✅ GET  /api/settings - Get settings');
+    console.log('   ✅ POST /api/settings - Save settings');
     console.log('   POST /api/autopost/run-now - Queue video for posting');
     console.log('   GET  /api/scheduler/status - Get queue status');
   });
