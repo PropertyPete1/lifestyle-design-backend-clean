@@ -11,17 +11,19 @@ const Settings = require('./src/models/settings.js');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// ✅ Bulletproof CORS for Vercel frontend + optional localhost
-app.use(cors({
-  origin: [
-    'https://lifestyle-design-frontend-v2.vercel.app',
-    'https://lifestyle-design-social.vercel.app',
-    'http://localhost:3000'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
+// ✅ Always allow the frontend origin — bulletproof CORS
+app.use(cors());
+
+app.use('/api', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://lifestyle-design-frontend-v2.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204); // Handle preflight
+  }
+  next();
+});
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
