@@ -11,14 +11,13 @@ const Settings = require('./src/models/settings.js');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// ✅ FORCE CORS HEADERS FOR VERCEL + RENDER
+// ✅ ABSOLUTE CORS FIX — APPLIES TO ALL ROUTES
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', 'https://lifestyle-design-frontend-v2.vercel.app');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   
-  // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
