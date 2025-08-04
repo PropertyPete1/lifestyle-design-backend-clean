@@ -7,6 +7,7 @@ const express = require('express');
 // const cors = require('cors'); // Not needed - using manual CORS headers
 const mongoose = require('mongoose');
 const Settings = require('./src/models/settings.js');
+const settingsRoutes = require('./src/routes/settings.ts');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -123,6 +124,9 @@ app.options('/api/settings', (req, res) => {
   res.header('Access-Control-Allow-Credentials', 'true');
   res.sendStatus(200);
 });
+
+// ✅ Register settings routes
+app.use('/api', settingsRoutes);
 
 // Settings endpoints - PHASE 9F CLEAN IMPLEMENTATION
 app.get('/api/settings', async (req, res) => {
