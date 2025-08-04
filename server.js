@@ -31,6 +31,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ✅ SETTINGS ROUTES FOR FRONTEND SAVE/LOAD
 const Settings = require('./src/models/settings.js');
+const settingsRoute = require('./src/routes/settingsRoute.js');
+
+// ✅ CRITICAL LINE - REGISTER SETTINGS ROUTER
+app.use('/api/settings', settingsRoute);
+console.log('✅ Settings router registered at /api/settings in server.js');
 
 app.get('/api/settings', async (req, res) => {
   try {

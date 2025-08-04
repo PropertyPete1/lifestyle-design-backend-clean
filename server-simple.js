@@ -7,6 +7,7 @@ const express = require('express');
 // const cors = require('cors'); // Not needed - using manual CORS headers
 const mongoose = require('mongoose');
 const Settings = require('./src/models/settings.js');
+const settingsRoute = require('./src/routes/settingsRoute.js');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -43,7 +44,11 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ✅ DIRECT SETTINGS ROUTES - GUARANTEED TO WORK
+// ✅ CRITICAL LINE - REGISTER SETTINGS ROUTER
+app.use('/api/settings', settingsRoute);
+console.log('✅ Settings router registered at /api/settings');
+
+// ✅ DIRECT SETTINGS ROUTES - GUARANTEED TO WORK (BACKUP)
 app.get('/api/settings', async (req, res) => {
   try {
     console.log('⚙️ [DIRECT] GET /api/settings request received');
