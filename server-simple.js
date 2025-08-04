@@ -4,24 +4,25 @@
 
 require('dotenv/config');
 const express = require('express');
-const cors = require('cors');
+// const cors = require('cors'); // Not needed - using manual CORS headers
 const mongoose = require('mongoose');
 const Settings = require('./src/models/settings.js');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// ✅ Always allow the frontend origin — bulletproof CORS
-app.use(cors());
+// ✅ MANUAL CORS FIX — overrides Render's weird behavior
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://lifestyle-design-frontend-v2.vercel.app');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-app.use('/api', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://lifestyle-design-frontend-v2.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
+  // Handle preflight
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(204); // Handle preflight
+    return res.sendStatus(204);
   }
+
   next();
 });
 
