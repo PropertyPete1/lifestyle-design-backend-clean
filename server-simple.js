@@ -11,38 +11,24 @@ const Settings = require('./src/models/settings.js');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// CORS configuration - Allow all Vercel deployments
+// ✅ Clean CORS configuration
+const allowedOrigins = [
+  'https://lifestyle-design-frontend-v2.vercel.app',
+  'https://lifestyle-design-social.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3001'
+];
+
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001', 
-      'https://frontend-v2-sage.vercel.app',
-      'https://lifestyle-design-social.vercel.app',
-      'https://lifestyle-design-frontend-v2.vercel.app'
-    ];
-    
-    // Allow any Vercel deployment URL (handles all deployment variations)
-    const isVercelDomain = origin.includes('vercel.app');
-    
-    if (allowedOrigins.includes(origin) || isVercelDomain) {
-      console.log('✅ CORS allowed origin:', origin);
-      return callback(null, true);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS not allowed for this origin: ' + origin));
     }
-    
-    console.log('⚠️  CORS rejected origin:', origin);
-    callback(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true,
-  optionsSuccessStatus: 200 // For legacy browsers
 }));
-
-// Preflight requests are handled by the CORS middleware above
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
