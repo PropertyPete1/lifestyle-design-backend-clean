@@ -11,7 +11,7 @@ const Settings = require('./src/models/settings.js');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// CORS configuration
+// CORS configuration - Allow all Vercel deployments
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -22,20 +22,14 @@ app.use(cors({
       'http://localhost:3001', 
       'https://frontend-v2-sage.vercel.app',
       'https://lifestyle-design-social.vercel.app',
-      'https://lifestyle-design-frontend-v2.vercel.app',
-      'https://lifestyle-design-frontend-v2-git-main-peter-allens-projects.vercel.app'
+      'https://lifestyle-design-frontend-v2.vercel.app'
     ];
     
-    // Allow any Vercel deployment URL for your project (handles random deployment IDs)
-    const isVercelDomain = (
-      origin.includes('lifestyle-design-frontend') && 
-      origin.includes('vercel.app')
-    ) || (
-      origin.includes('peter-allens-projects.vercel.app') &&
-      origin.includes('lifestyle-design-frontend')
-    );
+    // Allow any Vercel deployment URL (handles all deployment variations)
+    const isVercelDomain = origin.includes('vercel.app');
     
     if (allowedOrigins.includes(origin) || isVercelDomain) {
+      console.log('✅ CORS allowed origin:', origin);
       return callback(null, true);
     }
     
@@ -43,9 +37,19 @@ app.use(cors({
     callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true,
+  optionsSuccessStatus: 200 // For legacy browsers
 }));
+
+// Handle preflight requests explicitly
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(200);
+});
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
