@@ -11,22 +11,15 @@ const Settings = require('./src/models/settings.js');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// ✅ Clean CORS configuration
-const allowedOrigins = [
-  'https://lifestyle-design-frontend-v2.vercel.app',
-  'https://lifestyle-design-social.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:3001'
-];
-
+// ✅ Bulletproof CORS for Vercel frontend + optional localhost
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS not allowed for this origin: ' + origin));
-    }
-  },
+  origin: [
+    'https://lifestyle-design-frontend-v2.vercel.app',
+    'https://lifestyle-design-social.vercel.app',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
 
