@@ -157,40 +157,31 @@ app.post('/api/autopilot/run', async (req, res) => {
       return res.status(400).json({ error: 'AutoPilot is disabled. Enable it in settings first.' });
     }
 
-    // Mock successful run for now
+    // Import and run the comprehensive autopilot logic
+    const { runInstagramAutoPilot } = require('./phases/autopilot');
+    const autopilotResult = await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
+    
     settings.lastAutopilotRun = new Date();
     await settings.save();
 
     console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
-
+    
     res.json({
       success: true,
       message: 'AutoPilot run completed successfully',
-      videosScraped: 50,
-      videosScheduled: 2,
-      selectedVideo: {
-        engagement: 15000,
-        duration: 30
-      },
-      scheduledPosts: [
-        {
-          platform: 'instagram',
-          scheduledTime: new Date(Date.now() + 3600000),
-          caption: 'Amazing real estate opportunity with stunning views...'
-        },
-        {
-          platform: 'youtube',
-          scheduledTime: new Date(Date.now() + 7200000),
-          caption: 'Top real estate tips for 2025...'
-        }
-      ]
+      videosScraped: autopilotResult.videosScraped || 0,
+      videosScheduled: autopilotResult.videosScheduled || 0,
+      selectedVideo: autopilotResult.selectedVideo || null,
+      scheduledPosts: autopilotResult.scheduledPosts || []
     });
-
+    
   } catch (error) {
     console.error('❌ [AUTOPILOT RUN ERROR]', error);
     res.status(500).json({ error: 'AutoPilot run failed', message: error.message });
   }
 });
+
+// Settings endpoints
 
 console.log('✅ AutoPilot routes registered directly in server.js');
 
