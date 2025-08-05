@@ -121,10 +121,11 @@ async function scrapeInstagramDirect(settings) {
   
   // Try multiple possible Instagram usernames for Lifestyle Design Realty Texas
   const possibleUsernames = [
+    'LifestyleDesignRealtyTexas', // Your actual Instagram handle
     settings.instagramUsername, // From settings if available
+    'lifestyledesignrealtytexas',
     'lifestyledesignrealty',
     'lifestyledesignrealtytx', 
-    'lifestyledesignrealtytexas',
     'lifestyle.design.realty',
     'lifestyledesign.realty'
   ].filter(Boolean); // Remove null/undefined values

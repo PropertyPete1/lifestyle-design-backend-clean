@@ -242,7 +242,7 @@ async function scrapeYouTubeDirect(settings) {
         avgViews,
         growthRate: 1.8, // Estimated
         isPosting: true,
-        channelTitle: 'Lifestyle Design Channel',
+        channelTitle: 'Brokerage | Lifestyle Design Realty',
         lastUpdated: new Date().toISOString(),
         source: 'direct_scrape'
       };
@@ -261,7 +261,7 @@ async function scrapeYouTubeDirect(settings) {
       avgViews: 360,
       growthRate: 1.8,
       isPosting: true,
-      channelTitle: 'Lifestyle Design Channel',
+      channelTitle: 'Brokerage | Lifestyle Design Realty',
       lastUpdated: new Date().toISOString(),
       source: 'estimated'
     };
