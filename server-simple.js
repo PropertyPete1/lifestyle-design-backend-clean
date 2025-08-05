@@ -413,8 +413,8 @@ const startServer = async () => {
     console.log('🚀 [SERVER] Backend v2 running on port', PORT);
     console.log('📋 [SERVER] Available endpoints:');
     console.log('   GET  /api/health - Health check');
-    console.log('   ✅ GET  /api/settings - Get settings (DIRECT ROUTE)');
-    console.log('   ✅ POST /api/settings - Save settings (DIRECT ROUTE)');
+    console.log('   ✅ GET  /api/settings - Get settings (ROUTER)');
+    console.log('   ✅ POST /api/settings - Save settings (ROUTER)');
     console.log('   POST /api/autopost/run-now - Queue video for posting');
     console.log('   GET  /api/scheduler/status - Get queue status');
     console.log('   GET  /api/chart/status - Chart data for dashboard');
