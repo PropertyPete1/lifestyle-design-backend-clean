@@ -48,12 +48,11 @@ async function uploadToS3(localPath, s3Key, settings) {
       Bucket: settings.s3BucketName,
       Key: s3Key,
       Body: fileContent,
-      ACL: 'public-read',
       ContentType: 'video/mp4',
     };
 
     const result = await s3Instance.upload(params).promise();
-    const publicUrl = `https://${settings.s3BucketName}.s3.amazonaws.com/${s3Key}`;
+    const publicUrl = result.Location || `https://${settings.s3BucketName}.s3.${settings.s3Region || 'us-east-1'}.amazonaws.com/${s3Key}`;
     
     console.log('✅ [S3 UPLOAD] Success:', publicUrl);
     return publicUrl;
@@ -89,12 +88,11 @@ async function uploadBufferToS3(buffer, s3Key, settings) {
       Bucket: settings.s3BucketName,
       Key: s3Key,
       Body: buffer,
-      ACL: 'public-read',
       ContentType: 'video/mp4',
     };
 
     const result = await s3Instance.upload(params).promise();
-    const publicUrl = `https://${settings.s3BucketName}.s3.amazonaws.com/${s3Key}`;
+    const publicUrl = result.Location || `https://${settings.s3BucketName}.s3.${settings.s3Region || 'us-east-1'}.amazonaws.com/${s3Key}`;
     
     console.log('✅ [S3 BUFFER UPLOAD] Success:', publicUrl);
     return publicUrl;
