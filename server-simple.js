@@ -48,6 +48,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api/settings', settingsRoute);
 console.log('✅ Settings router registered at /api/settings');
 
+// ✅ REGISTER ANALYTICS ROUTER
+const analyticsRoute = require('./src/routes/analytics.js');
+app.use('/api', analyticsRoute);
+console.log('✅ Analytics router registered at /api');
+
 // ✅ ROUTER-ONLY APPROACH - Removed conflicting direct routes
 // Only using: app.use('/api/settings', settingsRoute) - line 48
 
@@ -204,39 +209,11 @@ app.get('/api/autopilot/activity', async (req, res) => {
   }
 });
 
-// Instagram analytics endpoint
-app.get('/api/instagram/analytics', async (req, res) => {
-  try {
-    // Mock Instagram analytics data
-    const analytics = {
-      followers: Math.floor(Math.random() * 10000) + 1000,
-      posts: Math.floor(Math.random() * 100) + 20,
-      engagement: (Math.random() * 5 + 1).toFixed(2) + '%',
-      reach: Math.floor(Math.random() * 50000) + 5000
-    };
-    res.json({ success: true, analytics });
-  } catch (err) {
-    console.error('[INSTAGRAM ANALYTICS ERROR]', err);
-    res.status(500).json({ error: 'Failed to get Instagram analytics' });
-  }
-});
-
-// YouTube analytics endpoint
-app.get('/api/youtube/analytics', async (req, res) => {
-  try {
-    // Mock YouTube analytics data  
-    const analytics = {
-      subscribers: Math.floor(Math.random() * 5000) + 500,
-      videos: Math.floor(Math.random() * 50) + 10,
-      views: Math.floor(Math.random() * 100000) + 10000,
-      watchTime: Math.floor(Math.random() * 1000) + 100 + ' hours'
-    };
-    res.json({ success: true, analytics });
-  } catch (err) {
-    console.error('[YOUTUBE ANALYTICS ERROR]', err);
-    res.status(500).json({ error: 'Failed to get YouTube analytics' });
-  }
-});
+// ✅ ANALYTICS ENDPOINTS MOVED TO ROUTER
+// All analytics endpoints now handled by /src/routes/analytics.ts
+// - /api/dashboard/analytics (new endpoint for heart indicators)
+// - /api/instagram/analytics (real Instagram Graph API)
+// - /api/youtube/analytics (real YouTube Data API v3 with token refresh)
 
 // Events endpoint for real-time updates
 app.get('/api/events/recent', async (req, res) => {
@@ -420,8 +397,9 @@ const startServer = async () => {
     console.log('   GET  /api/chart/status - Chart data for dashboard');
     console.log('   GET  /api/activity/feed - Activity feed');
     console.log('   GET  /api/autopilot/activity - Autopilot activity');
-    console.log('   GET  /api/instagram/analytics - Instagram analytics');
-    console.log('   GET  /api/youtube/analytics - YouTube analytics');
+    console.log('   GET  /api/dashboard/analytics - Combined analytics for heart indicators');
+    console.log('   GET  /api/instagram/analytics - Real Instagram Graph API analytics');
+    console.log('   GET  /api/youtube/analytics - Real YouTube Data API v3 analytics');
     console.log('   GET  /api/events/recent - Real-time events');
   });
 };
