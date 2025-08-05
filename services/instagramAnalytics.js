@@ -119,17 +119,68 @@ async function getInstagramAnalytics(Settings) {
 async function scrapeInstagramDirect(settings) {
   console.log('🕷️ [INSTAGRAM SCRAPER] Starting direct scrape...');
   
-  // Use Instagram username from business ID or extract from profile
-  const instagramUsername = settings.instagramUsername || 'lifestyledesignrealty'; // Default fallback
-  const instagramUrl = `https://www.instagram.com/${instagramUsername}/`;
+  // Try multiple possible Instagram usernames for Lifestyle Design Realty Texas
+  const possibleUsernames = [
+    settings.instagramUsername, // From settings if available
+    'lifestyledesignrealty',
+    'lifestyledesignrealtytx', 
+    'lifestyledesignrealtytexas',
+    'lifestyle.design.realty',
+    'lifestyledesign.realty'
+  ].filter(Boolean); // Remove null/undefined values
+  
+  console.log('🔍 [INSTAGRAM SCRAPER] Trying usernames:', possibleUsernames);
+  
+  // Try each username until one works
+  for (const username of possibleUsernames) {
+    try {
+      console.log(`🕷️ [INSTAGRAM SCRAPER] Trying: @${username}`);
+      const result = await scrapeInstagramProfile(username);
+      if (result && result.followers > 0) {
+        console.log(`✅ [INSTAGRAM SCRAPER] Found data for @${username}:`, result);
+        return result;
+      }
+    } catch (error) {
+      console.log(`❌ [INSTAGRAM SCRAPER] Failed for @${username}:`, error.message);
+      continue;
+    }
+  }
+  
+  // If all usernames fail, use estimated data
+  console.log('⚠️ [INSTAGRAM SCRAPER] All usernames failed, using estimated data...');
+  return {
+    followers: 13000, // Known approximate
+    following: 500,
+    posts: 150,
+    engagement: 3.2,
+    reach: 13000,
+    avgLikes: 400,
+    growthRate: 2.1,
+    isPosting: true,
+    lastUpdated: new Date().toISOString(),
+    source: 'estimated'
+  };
+}
+
+/**
+ * Scrape a specific Instagram profile
+ */
+async function scrapeInstagramProfile(username) {
+  const instagramUrl = `https://www.instagram.com/${username}/`;
   
   try {
+    console.log(`🔗 [INSTAGRAM SCRAPER] Fetching: ${instagramUrl}`);
+    
     // Simple fetch approach (Instagram public data)
     const response = await fetch(instagramUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Profile not found or private`);
+    }
     
     const html = await response.text();
     
@@ -150,31 +201,38 @@ async function scrapeInstagramDirect(settings) {
           growthRate: 2.5, // Estimated
           isPosting: true,
           lastUpdated: new Date().toISOString(),
-          source: 'direct_scrape'
+          source: 'direct_scrape',
+          username: username
         };
         
-        console.log('✅ [INSTAGRAM SCRAPER] Success:', result);
+        console.log(`✅ [INSTAGRAM SCRAPER] Success for @${username}:`, result);
         return result;
       }
     }
     
-    // Fallback with reasonable defaults based on known account
-    console.log('⚠️ [INSTAGRAM SCRAPER] Using estimated data...');
-    return {
-      followers: 13000, // Known approximate
-      following: 500,
-      posts: 150,
-      engagement: 3.2,
-      reach: 13000,
-      avgLikes: 400,
-      growthRate: 2.1,
-      isPosting: true,
-      lastUpdated: new Date().toISOString(),
-      source: 'estimated'
-    };
+    // If no JSON data found, try basic HTML parsing
+    const followerMatch = html.match(/(\d+(?:,\d+)*)\s*followers?/i);
+    if (followerMatch) {
+      const followers = parseInt(followerMatch[1].replace(/,/g, ''));
+      return {
+        followers,
+        following: 0,
+        posts: 0,
+        engagement: 3.0,
+        reach: followers,
+        avgLikes: Math.round(followers * 0.03), // 3% engagement estimate
+        growthRate: 2.0,
+        isPosting: true,
+        lastUpdated: new Date().toISOString(),
+        source: 'html_scrape',
+        username: username
+      };
+    }
+    
+    throw new Error('No Instagram data found in page');
     
   } catch (scrapeError) {
-    console.error('❌ [INSTAGRAM SCRAPER ERROR]', scrapeError);
+    console.error(`❌ [INSTAGRAM SCRAPER ERROR] @${username}:`, scrapeError.message);
     throw scrapeError;
   }
 }
