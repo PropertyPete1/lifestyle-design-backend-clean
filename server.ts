@@ -8,7 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import apiRoutes from './src/routes/index';
-import settingsRouter from './routes/settings';
+import settingsRoute from './routes/settings';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -45,7 +45,7 @@ const connectDB = async () => {
 
 // Routes
 app.use('/api', apiRoutes);
-app.use('/api/settings', settingsRouter);
+app.use('/api/settings', settingsRoute);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
