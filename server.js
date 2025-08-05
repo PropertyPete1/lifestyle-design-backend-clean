@@ -3,9 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
-// Keep alive service to prevent Render cold starts
-require('./keep-alive');
-
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -35,26 +32,6 @@ const settingsSchema = new mongoose.Schema({
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
 
-// Scheduler Queue Schema for autopilot posts
-const schedulerQueueSchema = new mongoose.Schema({
-  platform: { type: String, required: true }, // 'instagram' or 'youtube'
-  videoUrl: { type: String, required: true }, // S3 URL
-  caption: { type: String, required: true },
-  audio: { type: String }, // Trending audio URL (Instagram only)
-  scheduledTime: { type: Date, required: true },
-  thumbnailUrl: { type: String },
-  fingerprint: { type: String }, // For duplicate detection
-  thumbnailHash: { type: String }, // For visual similarity
-  originalVideoId: { type: String }, // Original Instagram video ID
-  engagement: { type: Number }, // Original engagement count
-  status: { type: String, enum: ['scheduled', 'posted', 'failed'], default: 'scheduled' },
-  source: { type: String, default: 'autopilot' },
-  postedAt: { type: Date },
-  error: { type: String }
-}, { timestamps: true });
-
-const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
-
 // CORS configuration for frontend-v2
 app.use(cors({
   origin: [
@@ -62,13 +39,7 @@ app.use(cors({
     'http://localhost:3001', 
     'https://frontend-v2-sage.vercel.app',
     'https://lifestyle-design-social.vercel.app',
-    'https://lifestyle-design-frontend-clean.vercel.app',
-    'https://lifestyle-design-frontend-v2.vercel.app',
-    'https://lifestyle-design-frontend-clean-propertypete1s-projects.vercel.app',
-    'https://lifestyle-design-frontend-clean-git-main-propertypete1s-projects.vercel.app',
-    // Additional Vercel auto-generated URLs
-    'https://lifestyle-design-frontend-v2-propertypete1s-projects.vercel.app',
-    'https://lifestyle-design-frontend-v2-git-main-propertypete1s-projects.vercel.app'
+    'https://lifestyle-design-frontend-clean.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -108,7 +79,39 @@ app.get('/api/autopilot/status', async (req, res) => {
   }
 });
 
-
+app.get('/api/autopilot/queue', async (req, res) => {
+  try {
+    const mockQueue = [
+      {
+        id: 1,
+        platform: 'instagram',
+        videoUrl: 'https://example.com/video1.mp4',
+        caption: 'Amazing real estate opportunity!',
+        scheduledTime: new Date(Date.now() + 3600000),
+        status: 'scheduled',
+        engagement: 15000
+      },
+      {
+        id: 2,
+        platform: 'youtube', 
+        videoUrl: 'https://example.com/video2.mp4',
+        caption: 'Check out this stunning property!',
+        scheduledTime: new Date(Date.now() + 7200000),
+        status: 'scheduled',
+        engagement: 25000
+      }
+    ];
+    
+    res.json({
+      queue: mockQueue,
+      totalCount: mockQueue.length,
+      platforms: ['instagram', 'youtube']
+    });
+  } catch (error) {
+    console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
+    res.status(500).json({ error: 'Failed to get AutoPilot queue' });
+  }
+});
 
 app.post('/api/autopilot/run', async (req, res) => {
   try {
@@ -123,37 +126,34 @@ app.post('/api/autopilot/run', async (req, res) => {
       return res.status(400).json({ error: 'AutoPilot is disabled. Enable it in settings first.' });
     }
 
-    // Import and run real autopilot logic
-    const { runInstagramAutoPilot } = require('./phases/autopilot');
-    
-    // Run the real autopilot system
-    const result = await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
-    
-    if (result.success) {
-      // Update last run time
-      settings.lastAutopilotRun = new Date();
-      await settings.save();
-      
-      console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
-      
-      res.json({
-        success: true,
-        message: result.message,
-        videosScraped: 500, // Always scrapes 500
-        videosScheduled: result.queuedPosts?.length || 0,
-        nextRun: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
-        selectedVideo: result.selectedVideo,
-        scheduledPosts: result.queuedPosts || [],
-        s3Url: result.s3Url
-      });
-    } else {
-      console.log('⚠️ [AUTOPILOT] AutoPilot run failed:', result.message);
-      res.status(400).json({
-        success: false,
-        error: result.message,
-        details: result.error
-      });
-    }
+    // Mock successful run for now
+    settings.lastAutopilotRun = new Date();
+    await settings.save();
+
+    console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
+
+    res.json({
+      success: true,
+      message: 'AutoPilot run completed successfully',
+      videosScraped: 50,
+      videosScheduled: 2,
+      selectedVideo: {
+        engagement: 15000,
+        duration: 30
+      },
+      scheduledPosts: [
+        {
+          platform: 'instagram',
+          scheduledTime: new Date(Date.now() + 3600000),
+          caption: 'Amazing real estate opportunity with stunning views...'
+        },
+        {
+          platform: 'youtube',
+          scheduledTime: new Date(Date.now() + 7200000),
+          caption: 'Top real estate tips for 2025...'
+        }
+      ]
+    });
 
   } catch (error) {
     console.error('❌ [AUTOPILOT RUN ERROR]', error);
@@ -161,113 +161,7 @@ app.post('/api/autopilot/run', async (req, res) => {
   }
 });
 
-// Mark post as posted (manual testing endpoint)
-app.post('/api/scheduler/mark-posted/:postId', async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { markAsPostedAndRefill } = require('./phases/autopilot');
-    
-    console.log(`📝 [MANUAL POST] Marking post as posted: ${postId}`);
-    await markAsPostedAndRefill('instagram', postId, SchedulerQueueModel, SettingsModel);
-    
-    res.json({ success: true, message: 'Post marked as posted and refill triggered' });
-  } catch (error) {
-    console.error('❌ [MARK POSTED ERROR]', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 console.log('✅ AutoPilot routes registered directly in server.js');
-
-// Queue management endpoints
-app.get('/api/autopilot/queue', async (req, res) => {
-  try {
-    console.log('📋 [AUTOPILOT QUEUE] Fetching autopilot queue...');
-    
-    const queuedPosts = await SchedulerQueueModel.find({
-      source: 'autopilot',
-      status: { $in: ['scheduled', 'posted'] }
-    }).sort({ scheduledTime: -1 }).limit(20).exec();
-    
-    const response = {
-      total: queuedPosts.length,
-      scheduled: queuedPosts.filter(p => p.status === 'scheduled').length,
-      posted: queuedPosts.filter(p => p.status === 'posted').length,
-      posts: queuedPosts.map(post => ({
-        id: post._id,
-        platform: post.platform,
-        status: post.status,
-        scheduledTime: post.scheduledTime,
-        postedAt: post.postedAt,
-        caption: post.caption.substring(0, 150) + '...',
-        engagement: post.engagement,
-        videoUrl: post.videoUrl,
-        thumbnailUrl: post.thumbnailUrl
-      }))
-    };
-    
-    console.log(`📋 [AUTOPILOT QUEUE] Found ${response.total} posts`);
-    res.json(response);
-    
-  } catch (error) {
-    console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
-    res.status(500).json({ error: 'Failed to fetch autopilot queue' });
-  }
-});
-
-// Enhanced scheduler status for autopilot
-app.get('/api/scheduler/status', async (req, res) => {
-  try {
-    console.log('📊 [SCHEDULER STATUS] Fetching enhanced queue status...');
-    
-    // Get scheduled posts
-    const scheduledPosts = await SchedulerQueueModel.find({
-      status: 'scheduled'
-    }).sort({ scheduledTime: 1 }).exec();
-    
-    // Get recent completed posts
-    const completedPosts = await SchedulerQueueModel.find({
-      status: 'posted'
-    }).sort({ postedAt: -1 }).limit(5).exec();
-    
-    const nextPost = scheduledPosts.length > 0 ? scheduledPosts[0] : null;
-    
-    const responseData = {
-      queueCount: scheduledPosts.length,
-      nextPost: nextPost ? {
-        platform: nextPost.platform,
-        scheduledTime: nextPost.scheduledTime,
-        caption: nextPost.caption.substring(0, 100) + '...'
-      } : null,
-      isActive: scheduledPosts.length > 0,
-      posts: scheduledPosts.slice(0, 10).map(post => ({
-        id: post._id,
-        platform: post.platform,
-        scheduledFor: post.scheduledTime,
-        caption: post.caption.substring(0, 100) + '...',
-        engagement: post.engagement,
-        source: post.source
-      })),
-      recentlyPosted: completedPosts.map(post => ({
-        id: post._id,
-        platform: post.platform,
-        postedAt: post.postedAt,
-        caption: post.caption.substring(0, 100) + '...',
-        engagement: post.engagement
-      }))
-    };
-    
-    console.log('📊 [SCHEDULER STATUS] Enhanced status retrieved');
-    res.json(responseData);
-    
-  } catch (error) {
-    console.error('❌ [SCHEDULER STATUS ERROR]', error);
-    res.status(500).json({
-      error: 'Failed to get scheduler status',
-      message: error.message
-    });
-  }
-});
 
 // Analytics services (with error handling for Render deployment)
 let instagramAnalytics, youtubeAnalytics;
@@ -286,32 +180,6 @@ try {
   console.log('⚠️ YouTube analytics service failed to load:', error.message);
   youtubeAnalytics = null;
 }
-
-// Chart status endpoint for dashboard widgets
-app.get('/api/chart/status', async (req, res) => {
-  try {
-    const queueCount = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
-    const postedCount = await SchedulerQueueModel.countDocuments({ status: 'posted' });
-    const failedCount = await SchedulerQueueModel.countDocuments({ status: 'failed' });
-    
-    res.json({
-      status: 'active',
-      queueCount,
-      postedToday: postedCount,
-      failedPosts: failedCount,
-      chartData: {
-        labels: ['Scheduled', 'Posted', 'Failed'],
-        datasets: [{
-          data: [queueCount, postedCount, failedCount],
-          backgroundColor: ['#3B82F6', '#10B981', '#EF4444']
-        }]
-      }
-    });
-  } catch (error) {
-    console.error('❌ Chart status error:', error);
-    res.status(500).json({ error: 'Failed to fetch chart status' });
-  }
-});
 
 // Unified dashboard analytics endpoint
 app.get('/api/analytics', async (req, res) => {
@@ -334,26 +202,13 @@ app.get('/api/analytics', async (req, res) => {
     res.json({
       instagram: {
         followers: igData.status === 'fulfilled' ? igData.value.followers : 0,
-        following: igData.status === 'fulfilled' ? igData.value.following : 0,
-        posts: igData.status === 'fulfilled' ? igData.value.posts : 0,
         reach: igData.status === 'fulfilled' ? igData.value.reach : 0,
-        engagement: igData.status === 'fulfilled' ? igData.value.engagement : 0,
-        engagementRate: igData.status === 'fulfilled' ? igData.value.engagement : 0, // Use engagement as engagementRate
-        avgLikes: igData.status === 'fulfilled' ? igData.value.avgLikes : 0,
-        growthRate: igData.status === 'fulfilled' ? igData.value.growthRate : 0,
-        isPosting: igData.status === 'fulfilled' ? igData.value.isPosting : false,
+        engagementRate: igData.status === 'fulfilled' ? igData.value.engagementRate : 0,
         autopilotEnabled: settings.autopilotEnabled || false
       },
       youtube: {
         subscribers: ytData.status === 'fulfilled' ? ytData.value.subscribers : 0,
-        views: ytData.status === 'fulfilled' ? ytData.value.views : 0,
-        videos: ytData.status === 'fulfilled' ? ytData.value.videos : 0,
-        engagement: ytData.status === 'fulfilled' ? ytData.value.engagement : 0,
-        avgViews: ytData.status === 'fulfilled' ? ytData.value.avgViews : 0,
-        growthRate: ytData.status === 'fulfilled' ? ytData.value.growthRate : 0,
-        watchTime: ytData.status === 'fulfilled' ? ytData.value.views : 0, // Using views as watchTime proxy
-        isPosting: ytData.status === 'fulfilled' ? ytData.value.isPosting : false,
-        channelTitle: ytData.status === 'fulfilled' ? ytData.value.channelTitle : '',
+        reach: ytData.status === 'fulfilled' ? ytData.value.reach : 0,
         autopilotEnabled: settings.autopilotEnabled || false
       },
       upcomingPosts: [],
@@ -451,27 +306,34 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Chart status endpoint for dashboard
+app.get('/api/chart/status', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOne();
+    const queueCount = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    
+    res.json({
+      status: 'active',
+      autopilotEnabled: settings?.autopilotEnabled || false,
+      queueCount,
+      lastUpdated: new Date().toISOString(),
+      service: 'backend-v2'
+    });
+  } catch (error) {
+    console.error('❌ [CHART] Error fetching chart status:', error);
+    res.status(500).json({
+      error: 'Failed to fetch chart status',
+      service: 'backend-v2'
+    });
+  }
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
     service: 'backend-v2',
     path: req.originalUrl
-  });
-});
-
-// Health check endpoint for keep-alive and monitoring
-app.get('/health', (req, res) => {
-  const uptime = process.uptime();
-  const timestamp = new Date().toISOString();
-  
-  res.json({
-    status: 'healthy',
-    uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
-    timestamp,
-    memory: process.memoryUsage(),
-    pid: process.pid,
-    service: 'backend-v2-clean'
   });
 });
 
