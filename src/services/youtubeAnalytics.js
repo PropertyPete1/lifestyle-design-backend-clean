@@ -68,11 +68,11 @@ async function scrapeYouTubeChannel(settings) {
       channelUrls.push(`https://www.youtube.com/user/${settings.youtubeChannelHandle.replace('@', '')}`);
     }
     
-    // Add some educated guesses based on the app context
+    // Add fallback URLs based on the actual channel name
+    channelUrls.push('https://www.youtube.com/@LifestyleDesignRealtyTexas');
+    channelUrls.push('https://www.youtube.com/c/LifestyleDesignRealtyTexas');
     channelUrls.push('https://www.youtube.com/@LifestyleDesignRealty');
     channelUrls.push('https://www.youtube.com/c/LifestyleDesignRealty');
-    channelUrls.push('https://www.youtube.com/@PropertyPete');
-    channelUrls.push('https://www.youtube.com/c/PropertyPete');
     
     if (channelUrls.length === 0) {
       console.warn('⚠️ [YT SCRAPER] No channel URLs to try');
