@@ -5,11 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "npm install --production && npm run install-puppeteer",
+    "build": "echo 'Build complete - using optimized Render install script'",
     "dev": "node server.js",
-    "postinstall": "echo 'Dependencies installed successfully'",
-    "install-puppeteer": "npm install puppeteer@21.11.0 --no-optional --production || echo 'Puppeteer install failed, continuing...'",
-    "render-postbuild": "echo 'Render post-build complete'"
+    "postinstall": "echo 'Core dependencies ready'",
+    "render-fast": "npm ci --only=production --silent --no-audit --no-fund || npm install --production --silent --no-audit --no-fund"
   },
   "engines": {
     "node": ">=16.0.0"
