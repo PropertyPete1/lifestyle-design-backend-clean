@@ -108,6 +108,11 @@ app.post('/api/settings', async (req, res) => {
 
 console.log('✅ Settings routes registered in server.js');
 
+// AutoPilot routes
+const autopilotRoutes = require('./routes/autopilot');
+app.use('/api/autopilot', autopilotRoutes);
+console.log('✅ AutoPilot routes registered in server.js');
+
 // Analytics services
 const { getInstagramAnalytics } = require('./services/instagramAnalytics');
 const { getYouTubeAnalytics } = require('./services/youtubeAnalytics');

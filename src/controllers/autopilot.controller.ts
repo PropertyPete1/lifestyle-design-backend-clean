@@ -1,6 +1,6 @@
 /**
- * AutoPilot Controller - STEP 3 Implementation
- * Handles automated posting with cleanup and repost protection
+ * AutoPilot Controller - PHASE 9 Implementation
+ * Handles automated Instagram repost system with engagement-based selection
  */
 
 import { Request, Response } from 'express';
@@ -8,6 +8,12 @@ import { MongoClient } from 'mongodb';
 import { postVideoWithCleanup } from '../services/videoPosting';
 import { smartScheduler } from '../utils/aiTools';
 import ActivityLog from '../models/activityLog';
+import Settings from '../models/Settings';
+
+// Import Phase 9 services
+const { scrapeLatestInstagramVideos, getLast30AutopilotPosts, generateContentFingerprint, downloadInstagramMedia } = require('../../services/instagramScraper');
+const { uploadToS3, generateAutopilotFilename } = require('../../services/s3Uploader');
+const { generateSmartCaption, getBestTimeToPost } = require('../../services/captionAI');
 
 /**
  * STEP 3: AutoPilot run endpoint - Posts videos with cleanup, no MongoDB file saving
@@ -257,6 +263,304 @@ export const runAutoPilotBatch = async (req: Request, res: Response) => {
       message: 'Batch processing failed',
       error: error instanceof Error ? error.message : 'Unknown error',
       videosProcessed: 0
+    });
+  }
+};
+
+/**
+ * PHASE 9: Complete Instagram AutoPilot Repost System
+ * Scrapes Instagram, selects top engagement video, uploads to S3, schedules posting
+ */
+export const runPhase9System = async (req: Request, res: Response) => {
+  try {
+    console.log('🚀 [PHASE 9] Starting Instagram AutoPilot Repost System...');
+    
+    const settings = await Settings.findOne();
+    if (!settings) {
+      return res.status(400).json({
+        success: false,
+        message: 'Settings not found. Please configure your credentials first.',
+        error: 'NO_SETTINGS'
+      });
+    }
+
+    if (!settings.autopilotEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: 'AutoPilot is disabled. Enable it in settings first.',
+        error: 'AUTOPILOT_DISABLED'
+      });
+    }
+
+    // Step 1: Scrape latest Instagram videos
+    console.log('📱 [PHASE 9] Step 1: Scraping latest Instagram videos...');
+    const videos = await scrapeLatestInstagramVideos(Settings, 500);
+    
+    if (!videos.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'No videos found in Instagram feed',
+        error: 'NO_VIDEOS'
+      });
+    }
+
+    // Step 2: Get recent posts to avoid duplicates
+    console.log('🔍 [PHASE 9] Step 2: Checking for duplicates...');
+    const recentPosts = await getLast30AutopilotPosts('instagram');
+    const recentFingerprints = recentPosts.map((v: any) => generateContentFingerprint(v));
+
+    // Step 3: Filter eligible videos
+    console.log('⚡ [PHASE 9] Step 3: Filtering eligible videos...');
+    const minEngagement = settings.minEngagement || 10000;
+    const eligible = videos
+      .filter((v: any) => v.engagement >= minEngagement)
+      .filter((v: any) => !recentFingerprints.includes(generateContentFingerprint(v)))
+      .sort((a: any, b: any) => b.engagement - a.engagement);
+
+    if (!eligible.length) {
+      return res.status(404).json({
+        success: false,
+        message: `No eligible videos found (need ≥${minEngagement} engagement, not recently posted)`,
+        videosScraped: videos.length,
+        error: 'NO_ELIGIBLE_VIDEOS'
+      });
+    }
+
+    const selectedVideo = eligible[0];
+    console.log(`🎯 [PHASE 9] Selected video with ${selectedVideo.engagement} engagement`);
+
+    // Step 4: Generate smart caption
+    console.log('✍️ [PHASE 9] Step 4: Generating smart caption...');
+    const newCaption = await generateSmartCaption(selectedVideo.caption, Settings);
+
+    // Step 5: Download video from Instagram
+    console.log('⬇️ [PHASE 9] Step 5: Downloading video...');
+    const videoBuffer = await downloadInstagramMedia(selectedVideo.downloadUrl);
+
+    // Step 6: Upload to S3
+    console.log('☁️ [PHASE 9] Step 6: Uploading to S3...');
+    const filename = generateAutopilotFilename('instagram');
+    const s3Result = await uploadToS3({ file: videoBuffer, filename }, Settings);
+
+    // Step 7: Schedule posts for enabled platforms
+    const scheduledPosts = [];
+    const mongoUrl = process.env.MONGODB_URI || 'mongodb://localhost:27017/lifestyle-design';
+    const client = new MongoClient(mongoUrl);
+
+    try {
+      await client.connect();
+      const db = client.db();
+      const queue = db.collection('autopilot_queue');
+
+      // Instagram scheduling
+      if (settings.instagramEnabled) {
+        const instagramTime = await getBestTimeToPost('instagram');
+        const instagramPost = {
+          platform: 'instagram',
+          videoId: selectedVideo.id,
+          originalEngagement: selectedVideo.engagement,
+          filename,
+          caption: newCaption,
+          s3Url: s3Result.Location,
+          scheduledAt: instagramTime,
+          status: 'scheduled',
+          createdAt: new Date(),
+          autopilotGenerated: true
+        };
+        
+        await queue.insertOne(instagramPost);
+        scheduledPosts.push({
+          platform: 'instagram',
+          scheduledAt: instagramTime.toISOString(),
+          s3Url: s3Result.Location
+        });
+        console.log(`📅 [PHASE 9] Instagram scheduled for: ${instagramTime.toLocaleString()}`);
+      }
+
+      // YouTube scheduling
+      if (settings.youtubeEnabled) {
+        const youtubeTime = await getBestTimeToPost('youtube');
+        const youtubePost = {
+          platform: 'youtube',
+          videoId: selectedVideo.id,
+          originalEngagement: selectedVideo.engagement,
+          filename,
+          caption: newCaption,
+          s3Url: s3Result.Location,
+          scheduledAt: youtubeTime,
+          status: 'scheduled',
+          createdAt: new Date(),
+          autopilotGenerated: true
+        };
+        
+        await queue.insertOne(youtubePost);
+        scheduledPosts.push({
+          platform: 'youtube',
+          scheduledAt: youtubeTime.toISOString(),
+          s3Url: s3Result.Location
+        });
+        console.log(`📅 [PHASE 9] YouTube scheduled for: ${youtubeTime.toLocaleString()}`);
+      }
+
+      // Update last run time
+      await Settings.updateOne({}, { lastAutopilotRun: new Date() });
+
+    } finally {
+      await client.close();
+    }
+
+    console.log('✅ [PHASE 9] AutoPilot system completed successfully!');
+
+    res.status(200).json({
+      success: true,
+      message: 'Phase 9 AutoPilot completed successfully',
+      data: {
+        videosScraped: videos.length,
+        eligibleVideos: eligible.length,
+        selectedVideo: {
+          id: selectedVideo.id,
+          engagement: selectedVideo.engagement,
+          caption: selectedVideo.caption.substring(0, 100) + '...'
+        },
+        generatedCaption: newCaption,
+        s3Upload: {
+          url: s3Result.Location,
+          filename
+        },
+        scheduledPosts,
+        platforms: {
+          instagram: settings.instagramEnabled,
+          youtube: settings.youtubeEnabled
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [PHASE 9 ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Phase 9 AutoPilot system failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Get AutoPilot status for frontend dashboard
+ */
+export const getAutoPilotStatus = async (req: Request, res: Response) => {
+  try {
+    const settings = await Settings.findOne();
+    const mongoUrl = process.env.MONGODB_URI || 'mongodb://localhost:27017/lifestyle-design';
+    const client = new MongoClient(mongoUrl);
+
+    try {
+      await client.connect();
+      const db = client.db();
+      const queue = db.collection('autopilot_queue');
+      
+      const now = new Date();
+      const stats = await queue.aggregate([
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]).toArray();
+
+      const statusCounts = stats.reduce((acc: any, stat: any) => {
+        acc[stat._id] = stat.count;
+        return acc;
+      }, {});
+
+      const nextScheduled = await queue.findOne(
+        { status: 'scheduled', scheduledAt: { $gte: now } },
+        { sort: { scheduledAt: 1 } }
+      );
+
+      res.json({
+        success: true,
+        autopilotEnabled: settings?.autopilotEnabled || false,
+        lastRun: settings?.lastAutopilotRun || null,
+        platforms: {
+          instagram: settings?.instagramEnabled || false,
+          youtube: settings?.youtubeEnabled || false
+        },
+        queue: {
+          scheduled: statusCounts.scheduled || 0,
+          processing: statusCounts.processing || 0,
+          completed: statusCounts.completed || 0,
+          failed: statusCounts.failed || 0
+        },
+        nextPost: nextScheduled ? {
+          platform: nextScheduled.platform,
+          scheduledAt: nextScheduled.scheduledAt,
+          caption: nextScheduled.caption?.substring(0, 50) + '...'
+        } : null
+      });
+
+    } finally {
+      await client.close();
+    }
+
+  } catch (error) {
+    console.error('❌ [AUTOPILOT STATUS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get autopilot status',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Get queued videos for dashboard display
+ */
+export const getAutoPilotQueue = async (req: Request, res: Response) => {
+  try {
+    const mongoUrl = process.env.MONGODB_URI || 'mongodb://localhost:27017/lifestyle-design';
+    const client = new MongoClient(mongoUrl);
+
+    try {
+      await client.connect();
+      const db = client.db();
+      const queue = db.collection('autopilot_queue');
+      
+      const queuedVideos = await queue.find({
+        status: { $in: ['scheduled', 'processing'] }
+      })
+      .sort({ scheduledAt: 1 })
+      .limit(20)
+      .toArray();
+
+      const formattedQueue = queuedVideos.map((video: any) => ({
+        id: video._id,
+        platform: video.platform,
+        caption: video.caption?.substring(0, 100) + '...',
+        scheduledAt: video.scheduledAt,
+        status: video.status,
+        s3Url: video.s3Url,
+        engagement: video.originalEngagement,
+        createdAt: video.createdAt
+      }));
+
+      res.json({
+        success: true,
+        queue: formattedQueue,
+        total: queuedVideos.length
+      });
+
+    } finally {
+      await client.close();
+    }
+
+  } catch (error) {
+    console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get autopilot queue',
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };

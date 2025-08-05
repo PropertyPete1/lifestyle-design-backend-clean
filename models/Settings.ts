@@ -16,6 +16,7 @@ const settingsSchema = new mongoose.Schema({
   s3AccessKey: String,
   s3SecretKey: String,
   s3BucketName: String,
+  s3Region: { type: String, default: 'us-east-1' },
   
   // Database
   mongoURI: String,
@@ -34,6 +35,18 @@ const settingsSchema = new mongoose.Schema({
   autopilotEnabled: { type: Boolean, default: false },
   cartoonMode: { type: Boolean, default: false },
   schedulerType: { type: String, default: 'daily' },
+  trendingAudio: { type: Boolean, default: false },
+  
+  // Platform Selection
+  instagramEnabled: { type: Boolean, default: true },
+  youtubeEnabled: { type: Boolean, default: true },
+  
+  // Engagement Thresholds
+  minEngagement: { type: Number, default: 10000 },
+  
+  // Scheduling Settings
+  postsPerDay: { type: Number, default: 3 },
+  lastAutopilotRun: Date,
 }, { 
   timestamps: true,
   collection: 'SettingsClean' // Use clean collection name
