@@ -203,13 +203,26 @@ app.get('/api/analytics', async (req, res) => {
     res.json({
       instagram: {
         followers: igData.status === 'fulfilled' ? igData.value.followers : 0,
+        following: igData.status === 'fulfilled' ? igData.value.following : 0,
+        posts: igData.status === 'fulfilled' ? igData.value.posts : 0,
         reach: igData.status === 'fulfilled' ? igData.value.reach : 0,
-        engagementRate: igData.status === 'fulfilled' ? igData.value.engagementRate : 0,
+        engagement: igData.status === 'fulfilled' ? igData.value.engagement : 0,
+        engagementRate: igData.status === 'fulfilled' ? igData.value.engagement : 0, // Use engagement as engagementRate
+        avgLikes: igData.status === 'fulfilled' ? igData.value.avgLikes : 0,
+        growthRate: igData.status === 'fulfilled' ? igData.value.growthRate : 0,
+        isPosting: igData.status === 'fulfilled' ? igData.value.isPosting : false,
         autopilotEnabled: settings.autopilotEnabled || false
       },
       youtube: {
         subscribers: ytData.status === 'fulfilled' ? ytData.value.subscribers : 0,
-        reach: ytData.status === 'fulfilled' ? ytData.value.reach : 0,
+        views: ytData.status === 'fulfilled' ? ytData.value.views : 0,
+        videos: ytData.status === 'fulfilled' ? ytData.value.videos : 0,
+        engagement: ytData.status === 'fulfilled' ? ytData.value.engagement : 0,
+        avgViews: ytData.status === 'fulfilled' ? ytData.value.avgViews : 0,
+        growthRate: ytData.status === 'fulfilled' ? ytData.value.growthRate : 0,
+        watchTime: ytData.status === 'fulfilled' ? ytData.value.views : 0, // Using views as watchTime proxy
+        isPosting: ytData.status === 'fulfilled' ? ytData.value.isPosting : false,
+        channelTitle: ytData.status === 'fulfilled' ? ytData.value.channelTitle : '',
         autopilotEnabled: settings.autopilotEnabled || false
       },
       upcomingPosts: [],
