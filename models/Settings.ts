@@ -11,6 +11,7 @@ const settingsSchema = new mongoose.Schema({
   youtubeAccessToken: String,
   youtubeRefreshToken: String,
   youtubeChannelId: String,
+  youtubeChannelHandle: String, // @username format for fallback scraping
   
   // AWS S3
   s3AccessKey: String,

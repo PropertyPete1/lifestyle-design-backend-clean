@@ -246,15 +246,22 @@ async function getYouTubeAnalytics(settings) {
     console.log('📺 [YT ANALYTICS] Fetching YouTube analytics...');
 
     if (!settings.youtubeAccessToken) {
-      console.log('⚠️ [YT ANALYTICS] Missing YouTube credentials');
+      console.log('⚠️ [YT ANALYTICS] Missing YouTube access token, trying to scrape instead...');
       console.log(`📋 [YT ANALYTICS] Have clientId: ${!!settings.youtubeClientId}, clientSecret: ${!!settings.youtubeClientSecret}, accessToken: ${!!settings.youtubeAccessToken}, refreshToken: ${!!settings.youtubeRefreshToken}`);
-      return {
-        error: 'YouTube credentials not configured',
-        subscriberCount: 0,
-        estimatedMinutesWatched: 0,
-        views: 0,
-        videoCount: 0
-      };
+      
+      // If no access token, try scraping directly
+      if (settings.youtubeChannelId || settings.youtubeChannelHandle) {
+        console.log('🔄 [YT ANALYTICS] No API access, falling back to channel scraping...');
+        return await scrapeYouTubeChannel(settings);
+      } else {
+        return {
+          error: 'YouTube credentials not configured and no channel ID for scraping',
+          subscriberCount: 0,
+          estimatedMinutesWatched: 0,
+          views: 0,
+          videoCount: 0
+        };
+      }
     }
 
     let accessToken = settings.youtubeAccessToken;
@@ -358,6 +365,19 @@ async function getYouTubeAnalytics(settings) {
     const engagementRate = parseInt(stats.subscriberCount) > 0 ? 
       (avgViews / parseInt(stats.subscriberCount) * 100) : 0;
 
+    // Cache the channel ID for future scraping fallbacks
+    if (channelId && !settings.youtubeChannelId) {
+      try {
+        await settings.constructor.updateOne(
+          { _id: settings._id },
+          { youtubeChannelId: channelId }
+        );
+        console.log(`💾 [YT ANALYTICS] Cached channel ID: ${channelId}`);
+      } catch (cacheError) {
+        console.warn('⚠️ [YT ANALYTICS] Failed to cache channel ID:', cacheError.message);
+      }
+    }
+
     const analytics = {
       subscriberCount: parseInt(stats.subscriberCount) || 0,
       views: parseInt(stats.viewCount) || 0,
@@ -369,7 +389,8 @@ async function getYouTubeAnalytics(settings) {
       engagement: Math.round(engagementRate * 100) / 100,
       avgViews: Math.round(avgViews),
       isPosting,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      source: 'youtube_api'
     };
 
     console.log(`✅ [YT ANALYTICS] Fetched: ${analytics.subscriberCount} subscribers, ${analytics.views.toLocaleString()} views for ${analytics.channelTitle}`);
