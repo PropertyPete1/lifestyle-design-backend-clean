@@ -1,20 +1,63 @@
 // ✅ S3 Uploader Service - Phase 9 AutoPilot System
 let AWS = null;
+let isAWSAvailable = false;
+
 try {
   AWS = require('aws-sdk');
-  console.log('✅ AWS SDK loaded successfully');
+  isAWSAvailable = true;
+  console.log('✅ AWS SDK loaded successfully - S3 uploads enabled');
 } catch (err) {
   console.warn('⚠️ AWS SDK not available, S3 upload disabled:', err.message);
-  // Create a mock AWS object for fallback
-  AWS = {
-    S3: function() {
-      return {
-        upload: () => {
-          throw new Error('AWS SDK not installed - S3 upload unavailable');
-        }
-      };
-    }
-  };
+  console.log('📦 [AWS SDK] Attempting to load alternative AWS client...');
+  
+  // Try to use @aws-sdk/client-s3 (v3) as fallback
+  try {
+    const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+    AWS = {
+      S3: function(config) {
+        const client = new S3Client({
+          region: config.region,
+          credentials: {
+            accessKeyId: config.accessKeyId,
+            secretAccessKey: config.secretAccessKey
+          }
+        });
+        return {
+          upload: async (params) => {
+            const command = new PutObjectCommand({
+              Bucket: params.Bucket,
+              Key: params.Key,
+              Body: params.Body
+            });
+            const result = await client.send(command);
+            return {
+              promise: () => Promise.resolve({
+                Location: `https://${params.Bucket}.s3.amazonaws.com/${params.Key}`,
+                Key: params.Key,
+                Bucket: params.Bucket
+              })
+            };
+          }
+        };
+      },
+      config: { update: () => {} }
+    };
+    isAWSAvailable = true;
+    console.log('✅ AWS SDK v3 loaded as fallback');
+  } catch (v3Error) {
+    console.warn('⚠️ AWS SDK v3 also not available:', v3Error.message);
+    // Create a mock AWS object for final fallback
+    AWS = {
+      S3: function() {
+        return {
+          upload: () => {
+            throw new Error('AWS SDK not installed - S3 upload unavailable');
+          }
+        };
+      },
+      config: { update: () => {} }
+    };
+  }
 }
 
 /**
@@ -30,14 +73,15 @@ async function uploadToS3(options, Settings) {
     console.log('☁️ [S3 UPLOAD] Starting upload to S3...');
     
     // Check if AWS SDK is available
-    if (!AWS || typeof AWS.S3 !== 'function') {
+    if (!isAWSAvailable || !AWS || typeof AWS.S3 !== 'function') {
       console.warn('⚠️ [S3 UPLOAD] AWS SDK not available, simulating upload');
       // Return a mock response for testing/fallback
       return {
         Location: `https://mock-s3-bucket.s3.amazonaws.com/${options.filename}`,
         Key: options.filename,
         Bucket: 'mock-bucket',
-        mock: true
+        mock: true,
+        note: 'Mock upload - AWS SDK not available on this platform'
       };
     }
     

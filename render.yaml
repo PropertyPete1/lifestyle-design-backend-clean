@@ -3,14 +3,18 @@ services:
     name: lifestyle-design-backend-v2
     env: node
     plan: free
-    buildCommand: npm install --production --no-audit --no-fund
+    buildCommand: chmod +x render-install.sh && ./render-install.sh
     startCommand: npm start
     healthCheckPath: /
     envVars:
       - key: NODE_ENV
         value: production
       - key: NODE_OPTIONS
-        value: "--max-old-space-size=512"
+        value: "--max-old-space-size=1024"
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "false"
+      - key: PUPPETEER_CACHE_DIR
+        value: "/opt/render/.cache/puppeteer"
     scaling:
       minInstances: 0
       maxInstances: 1

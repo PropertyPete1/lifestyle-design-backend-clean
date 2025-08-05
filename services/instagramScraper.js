@@ -139,20 +139,35 @@ async function scrapeLatestInstagramVideos(Settings, limit = 500) {
     }
 
     // Launch headless browser for visual scraping
-    browser = await puppeteer.launch({
-      headless: true,
+    const launchOptions = {
+      headless: 'new', // Use new headless mode
       args: [
         '--no-sandbox',
-        '--disable-setuid-sandbox',
+        '--disable-setuid-sandbox', 
         '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-background-networking',
+        '--memory-pressure-off',
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ]
-    });
+        '--single-process'
+      ],
+      // Render.com specific settings
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      timeout: 30000,
+      protocolTimeout: 30000
+    };
 
+    browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
     
     // Set realistic user agent and viewport
