@@ -1,5 +1,25 @@
 // ✅ Instagram Analytics Service - Phase 9 AutoPilot System
-const fetch = require('node-fetch');
+let fetch;
+try {
+  fetch = require('node-fetch');
+} catch (err) {
+  // Fallback to axios for Render compatibility
+  const axios = require('axios');
+  fetch = async (url, options = {}) => {
+    const config = {
+      url,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      data: options.body
+    };
+    const response = await axios(config);
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      json: async () => response.data
+    };
+  };
+}
 
 /**
  * Fetches Instagram analytics data using Graph API
