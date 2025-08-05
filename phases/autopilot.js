@@ -7,7 +7,7 @@ const { uploadBufferToS3, generateS3Key } = require('../utils/s3Uploader');
 const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartScheduler');
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
 const { getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
-const { generateSmartCaption, findTrendingAudio } = require('../services/captionAI');
+const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
 
 /**
  * Run Instagram AutoPilot - Main autopilot function
@@ -91,7 +91,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
-    const smartCaption = await generateSmartCaption(selectedVideo.caption, settings.openaiApiKey);
+    const smartCaption = await generateSmartCaptionWithKey(selectedVideo.caption, settings.openaiApiKey);
     
     // STEP 9: Get trending audio (if enabled)
     let trendingAudio = null;

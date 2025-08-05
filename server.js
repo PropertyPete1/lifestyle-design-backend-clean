@@ -187,6 +187,96 @@ app.post('/api/autopilot/run', async (req, res) => {
 
 console.log('✅ AutoPilot routes registered directly in server.js');
 
+// Queue management endpoints
+app.get('/api/autopilot/queue', async (req, res) => {
+  try {
+    console.log('📋 [AUTOPILOT QUEUE] Fetching autopilot queue...');
+    
+    const queuedPosts = await SchedulerQueueModel.find({
+      source: 'autopilot',
+      status: { $in: ['scheduled', 'posted'] }
+    }).sort({ scheduledTime: -1 }).limit(20).exec();
+    
+    const response = {
+      total: queuedPosts.length,
+      scheduled: queuedPosts.filter(p => p.status === 'scheduled').length,
+      posted: queuedPosts.filter(p => p.status === 'posted').length,
+      posts: queuedPosts.map(post => ({
+        id: post._id,
+        platform: post.platform,
+        status: post.status,
+        scheduledTime: post.scheduledTime,
+        postedAt: post.postedAt,
+        caption: post.caption.substring(0, 150) + '...',
+        engagement: post.engagement,
+        videoUrl: post.videoUrl,
+        thumbnailUrl: post.thumbnailUrl
+      }))
+    };
+    
+    console.log(`📋 [AUTOPILOT QUEUE] Found ${response.total} posts`);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch autopilot queue' });
+  }
+});
+
+// Enhanced scheduler status for autopilot
+app.get('/api/scheduler/status', async (req, res) => {
+  try {
+    console.log('📊 [SCHEDULER STATUS] Fetching enhanced queue status...');
+    
+    // Get scheduled posts
+    const scheduledPosts = await SchedulerQueueModel.find({
+      status: 'scheduled'
+    }).sort({ scheduledTime: 1 }).exec();
+    
+    // Get recent completed posts
+    const completedPosts = await SchedulerQueueModel.find({
+      status: 'posted'
+    }).sort({ postedAt: -1 }).limit(5).exec();
+    
+    const nextPost = scheduledPosts.length > 0 ? scheduledPosts[0] : null;
+    
+    const responseData = {
+      queueCount: scheduledPosts.length,
+      nextPost: nextPost ? {
+        platform: nextPost.platform,
+        scheduledTime: nextPost.scheduledTime,
+        caption: nextPost.caption.substring(0, 100) + '...'
+      } : null,
+      isActive: scheduledPosts.length > 0,
+      posts: scheduledPosts.slice(0, 10).map(post => ({
+        id: post._id,
+        platform: post.platform,
+        scheduledFor: post.scheduledTime,
+        caption: post.caption.substring(0, 100) + '...',
+        engagement: post.engagement,
+        source: post.source
+      })),
+      recentlyPosted: completedPosts.map(post => ({
+        id: post._id,
+        platform: post.platform,
+        postedAt: post.postedAt,
+        caption: post.caption.substring(0, 100) + '...',
+        engagement: post.engagement
+      }))
+    };
+    
+    console.log('📊 [SCHEDULER STATUS] Enhanced status retrieved');
+    res.json(responseData);
+    
+  } catch (error) {
+    console.error('❌ [SCHEDULER STATUS ERROR]', error);
+    res.status(500).json({
+      error: 'Failed to get scheduler status',
+      message: error.message
+    });
+  }
+});
+
 // Analytics services (with error handling for Render deployment)
 let instagramAnalytics, youtubeAnalytics;
 try {
