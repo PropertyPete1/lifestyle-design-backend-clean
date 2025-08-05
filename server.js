@@ -3,6 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
+// Keep alive service to prevent Render cold starts
+require('./keep-alive');
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -60,7 +63,9 @@ app.use(cors({
     'https://frontend-v2-sage.vercel.app',
     'https://lifestyle-design-social.vercel.app',
     'https://lifestyle-design-frontend-clean.vercel.app',
-    'https://lifestyle-design-frontend-v2.vercel.app'
+    'https://lifestyle-design-frontend-v2.vercel.app',
+    'https://lifestyle-design-frontend-clean-propertypete1s-projects.vercel.app',
+    'https://lifestyle-design-frontend-clean-git-main-propertypete1s-projects.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -439,6 +444,21 @@ app.use('*', (req, res) => {
     error: 'Endpoint not found',
     service: 'backend-v2',
     path: req.originalUrl
+  });
+});
+
+// Health check endpoint for keep-alive and monitoring
+app.get('/health', (req, res) => {
+  const uptime = process.uptime();
+  const timestamp = new Date().toISOString();
+  
+  res.json({
+    status: 'healthy',
+    uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
+    timestamp,
+    memory: process.memoryUsage(),
+    pid: process.pid,
+    service: 'backend-v2-clean'
   });
 });
 
