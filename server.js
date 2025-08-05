@@ -42,6 +42,7 @@ const settingsSchema = new mongoose.Schema({
   youtubeClientSecret: String,
   youtubeAccessToken: String,
   youtubeRefreshToken: String,
+  youtubeChannelId: String,
   
   // AWS S3
   s3AccessKey: String,
