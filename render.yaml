@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: lifestyle-design-backend-v2-fresh
+    name: lifestyle-design-backend-v2-ultimate
     env: node
     plan: free
     buildCommand: npm install --production
-    startCommand: node start.js
+    startCommand: node server-ultimate.js
     healthCheckPath: /health
     buildTimeoutSec: 1800
     rootDir: .

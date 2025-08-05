@@ -7,6 +7,7 @@ tsconfig.json
 server.js
 index.js
 app.js
+start.js
 server-simple.js
 render-*.sh
 .git/

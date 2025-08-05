@@ -1,10 +1,10 @@
 {
-  "name": "lifestyle-design-backend-v2-fresh",
+  "name": "lifestyle-design-backend-v2-ultimate",
   "version": "2.0.0",
   "description": "Backend v2 for Lifestyle Design Auto Poster",
-  "main": "start.js",
+  "main": "server-ultimate.js",
   "scripts": {
-    "start": "node start.js",
+    "start": "node server-ultimate.js",
     "build": "echo 'Build complete - JavaScript ready'",
     "dev": "ts-node server.ts",
     "postinstall": "echo 'Dependencies installed'",
