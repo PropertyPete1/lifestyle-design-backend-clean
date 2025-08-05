@@ -27,19 +27,23 @@ async function getInstagramAnalytics(Settings) {
       };
     }
 
-    // Get basic account info
-    const accountUrl = `https://graph.instagram.com/${settings.igBusinessId}?fields=followers_count,follows_count,media_count&access_token=${settings.instagramToken}`;
+    // Get basic account info using Facebook Graph API (correct endpoint)
+    const accountUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}?fields=followers_count,follows_count,media_count&access_token=${settings.instagramToken}`;
+    
+    console.log('🔗 [INSTAGRAM ANALYTICS] Calling API:', accountUrl.replace(settings.instagramToken, 'TOKEN_HIDDEN'));
     
     const accountResponse = await fetch(accountUrl);
     if (!accountResponse.ok) {
-      throw new Error(`Instagram API error: ${accountResponse.status}`);
+      const errorText = await accountResponse.text();
+      console.error('❌ [INSTAGRAM ANALYTICS] API Error:', accountResponse.status, errorText);
+      throw new Error(`Instagram API error: ${accountResponse.status} - ${errorText}`);
     }
     
     const accountData = await accountResponse.json();
     console.log('📊 [INSTAGRAM ANALYTICS] Account data:', accountData);
 
     // Get recent media for engagement calculation
-    const mediaUrl = `https://graph.instagram.com/${settings.igBusinessId}/media?fields=like_count,comments_count,timestamp&limit=10&access_token=${settings.instagramToken}`;
+    const mediaUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=like_count,comments_count,timestamp&limit=10&access_token=${settings.instagramToken}`;
     
     const mediaResponse = await fetch(mediaUrl);
     const mediaData = await mediaResponse.json();

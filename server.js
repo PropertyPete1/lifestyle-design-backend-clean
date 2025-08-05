@@ -202,11 +202,14 @@ app.get('/api/analytics', async (req, res) => {
     if (settings.instagramToken && settings.igBusinessId) {
       console.log('📷 [ANALYTICS] Fetching real Instagram data...');
       try {
-        const igData = await getInstagramAnalytics(settings);
+        const igData = await getInstagramAnalytics(Settings);
         if (igData && !igData.error) {
-          analytics.instagram.followers = igData.followers_count || 0;
-          analytics.instagram.reach = igData.reach || 0;
-          analytics.instagram.engagementRate = igData.engagement_rate || 0;
+          analytics.instagram.followers = igData.followers || 0;
+          analytics.instagram.reach = igData.avgLikes || 0; // Using avg likes as reach metric
+          analytics.instagram.engagementRate = igData.engagement || 0;
+          console.log(`✅ [ANALYTICS] Instagram data: ${igData.followers} followers, ${igData.engagement}% engagement`);
+        } else {
+          console.warn('⚠️ [ANALYTICS] Instagram API returned error:', igData?.error);
         }
       } catch (igError) {
         console.error('❌ [IG ANALYTICS] Error:', igError.message);
@@ -217,10 +220,13 @@ app.get('/api/analytics', async (req, res) => {
     if (settings.youtubeAccessToken && settings.youtubeChannelId) {
       console.log('📺 [ANALYTICS] Fetching real YouTube data...');
       try {
-        const ytData = await getYouTubeAnalytics(settings);
+        const ytData = await getYouTubeAnalytics(Settings);
         if (ytData && !ytData.error) {
-          analytics.youtube.subscribers = ytData.subscriberCount || 0;
+          analytics.youtube.subscribers = ytData.subscribers || 0;
           analytics.youtube.reach = ytData.views || 0;
+          console.log(`✅ [ANALYTICS] YouTube data: ${ytData.subscribers} subscribers, ${ytData.views} total views`);
+        } else {
+          console.warn('⚠️ [ANALYTICS] YouTube API returned error:', ytData?.error);
         }
       } catch (ytError) {
         console.error('❌ [YT ANALYTICS] Error:', ytError.message);

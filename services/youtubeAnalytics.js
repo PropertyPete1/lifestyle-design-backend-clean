@@ -30,12 +30,17 @@ async function getYouTubeAnalytics(Settings) {
     // Get channel statistics
     const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true&access_token=${settings.youtubeAccessToken}`;
     
+    console.log('🔗 [YOUTUBE ANALYTICS] Calling API:', channelUrl.replace(settings.youtubeAccessToken, 'TOKEN_HIDDEN'));
+    
     const channelResponse = await fetch(channelUrl);
     if (!channelResponse.ok) {
-      throw new Error(`YouTube API error: ${channelResponse.status}`);
+      const errorText = await channelResponse.text();
+      console.error('❌ [YOUTUBE ANALYTICS] API Error:', channelResponse.status, errorText);
+      throw new Error(`YouTube API error: ${channelResponse.status} - ${errorText}`);
     }
     
     const channelData = await channelResponse.json();
+    console.log('📊 [YOUTUBE ANALYTICS] Channel data:', channelData);
     
     if (!channelData.items || channelData.items.length === 0) {
       throw new Error('No YouTube channel found');
