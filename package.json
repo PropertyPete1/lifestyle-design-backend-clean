@@ -5,9 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "npm install --production",
+    "build": "echo 'Build complete - Node.js ready'",
     "dev": "node server.js",
-    "postinstall": "echo 'Dependencies installed successfully'"
+    "postinstall": "echo 'Dependencies installed successfully'",
+    "render-postbuild": "echo 'Render post-build complete'"
   },
   "engines": {
     "node": ">=16.0.0"

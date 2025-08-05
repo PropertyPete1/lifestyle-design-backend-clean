@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: lifestyle-design-backend-v2
+    env: node
+    plan: free
+    buildCommand: npm install --production --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=512"
+    scaling:
+      minInstances: 0
+      maxInstances: 1
+    autoDeploy: true
+    branch: main
