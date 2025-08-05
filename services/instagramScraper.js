@@ -43,7 +43,76 @@ try {
   }
 }
 
-const puppeteer = require('puppeteer');
+// Puppeteer with fallback for Render deployment
+let puppeteer = null;
+try {
+  puppeteer = require('puppeteer');
+  console.log('✅ Puppeteer loaded successfully');
+} catch (err) {
+  console.warn('⚠️ Puppeteer not available, visual scraping disabled:', err.message);
+  // Create a mock puppeteer object for fallback
+  puppeteer = {
+    launch: () => {
+      throw new Error('Puppeteer not installed - visual scraping unavailable');
+    }
+  };
+}
+
+/**
+ * Graph API Fallback - When visual scraping is not available
+ * Uses Instagram Graph API to get videos (without view counts)
+ * @param {Object} settings - Settings from MongoDB
+ * @param {number} limit - Number of videos to fetch
+ * @returns {Array} Array of video objects with engagement data
+ */
+async function getLatestInstagramVideosGraphAPI(settings, limit = 500) {
+  try {
+    console.log('📊 [GRAPH API FALLBACK] Fetching Instagram videos via Graph API...');
+    
+    const mediaUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,caption,media_url,permalink,timestamp,media_type,like_count,comments_count&limit=${Math.min(limit, 100)}&access_token=${settings.instagramToken}`;
+    
+    const response = await fetch(mediaUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Graph API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.data || !Array.isArray(data.data)) {
+      console.warn('⚠️ [GRAPH API] No media data returned');
+      return [];
+    }
+
+    // Filter for videos only and calculate engagement
+    const videos = data.data
+      .filter(item => item.media_type === 'VIDEO')
+      .map(video => ({
+        id: video.id,
+        caption: video.caption || '',
+        downloadUrl: video.media_url,
+        permalink: video.permalink,
+        timestamp: video.timestamp,
+        viewCount: 0, // Graph API doesn't provide view counts
+        engagement: (video.like_count || 0) + (video.comments_count || 0),
+        likes: video.like_count || 0,
+        comments: video.comments_count || 0,
+        source: 'graph_api_fallback'
+      }));
+
+    console.log(`✅ [GRAPH API FALLBACK] Found ${videos.length} videos`);
+    return videos;
+
+  } catch (error) {
+    console.error('❌ [GRAPH API FALLBACK] Error:', error.message);
+    return [];
+  }
+}
 
 /**
  * PHASE 9: Visual Instagram Scraper - Gets ACTUAL view counts
@@ -61,6 +130,12 @@ async function scrapeLatestInstagramVideos(Settings, limit = 500) {
     const settings = await Settings.findOne();
     if (!settings || !settings.instagramToken || !settings.igBusinessId) {
       throw new Error('Instagram credentials not found in settings');
+    }
+
+    // Check if puppeteer is available
+    if (!puppeteer || typeof puppeteer.launch !== 'function') {
+      console.warn('⚠️ [VISUAL SCRAPER] Puppeteer not available, falling back to Graph API only');
+      return await getLatestInstagramVideosGraphAPI(settings, limit);
     }
 
     // Launch headless browser for visual scraping
@@ -216,7 +291,20 @@ async function scrapeLatestInstagramVideos(Settings, limit = 500) {
 
   } catch (error) {
     console.error('❌ [VISUAL SCRAPER ERROR]', error);
-    throw error;
+    console.log('🔄 [FALLBACK] Attempting Graph API fallback...');
+    
+    try {
+      const settings = await Settings.findOne();
+      if (settings) {
+        return await getLatestInstagramVideosGraphAPI(settings, limit);
+      }
+    } catch (fallbackError) {
+      console.error('❌ [FALLBACK ERROR]', fallbackError);
+    }
+    
+    // If all else fails, return empty array instead of throwing
+    console.warn('⚠️ [FINAL FALLBACK] Returning empty array');
+    return [];
   } finally {
     if (browser) {
       await browser.close();
