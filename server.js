@@ -161,6 +161,118 @@ app.get('/api/dashboard/analytics', async (req, res) => {
   }
 });
 
+// NEW: Unified analytics endpoint for real data (matching frontend expectations)
+app.get('/api/analytics', async (req, res) => {
+  try {
+    console.log('📊 [ANALYTICS] Fetching real analytics data from APIs...');
+
+    const settings = await Settings.findOne();
+    if (!settings) {
+      return res.status(404).json({
+        success: false,
+        error: 'Settings not found. Please configure your credentials first.'
+      });
+    }
+
+    // Response structure matching dashboard requirements
+    const analytics = {
+      instagram: {
+        followers: 0,
+        reach: 0,
+        engagementRate: 0,
+        autopilotEnabled: settings.autopilotEnabled || false
+      },
+      youtube: {
+        subscribers: 0,
+        reach: 0,
+        autopilotEnabled: settings.autopilotEnabled || false
+      },
+      upcomingPosts: [],
+      credentials: {
+        instagramAccessToken: settings.instagramToken ? '✅ Configured' : '❌ Missing',
+        igBusinessAccountId: settings.igBusinessId ? '✅ Configured' : '❌ Missing',
+        youtubeToken: settings.youtubeAccessToken ? '✅ Configured' : '❌ Missing',
+        youtubeRefreshToken: settings.youtubeRefreshToken ? '✅ Configured' : '❌ Missing',
+        s3Bucket: settings.s3BucketName ? '✅ Configured' : '❌ Missing',
+        mongoUri: settings.mongoURI ? '✅ Configured' : '❌ Missing'
+      }
+    };
+
+    // Get real Instagram analytics if configured
+    if (settings.instagramToken && settings.igBusinessId) {
+      console.log('📷 [ANALYTICS] Fetching real Instagram data...');
+      try {
+        const igData = await getInstagramAnalytics(settings);
+        if (igData && !igData.error) {
+          analytics.instagram.followers = igData.followers_count || 0;
+          analytics.instagram.reach = igData.reach || 0;
+          analytics.instagram.engagementRate = igData.engagement_rate || 0;
+        }
+      } catch (igError) {
+        console.error('❌ [IG ANALYTICS] Error:', igError.message);
+      }
+    }
+
+    // Get real YouTube analytics if configured
+    if (settings.youtubeAccessToken && settings.youtubeChannelId) {
+      console.log('📺 [ANALYTICS] Fetching real YouTube data...');
+      try {
+        const ytData = await getYouTubeAnalytics(settings);
+        if (ytData && !ytData.error) {
+          analytics.youtube.subscribers = ytData.subscriberCount || 0;
+          analytics.youtube.reach = ytData.views || 0;
+        }
+      } catch (ytError) {
+        console.error('❌ [YT ANALYTICS] Error:', ytError.message);
+      }
+    }
+
+    // Get upcoming posts from autopilot queue
+    try {
+      const client = new MongoClient(process.env.MONGODB_URI || 'mongodb://localhost:27017/lifestyle-design');
+      await client.connect();
+      const db = client.db();
+      const queue = db.collection('autopilot_queue');
+
+      const upcomingPosts = await queue.find({
+        status: 'scheduled',
+        scheduledAt: { $gte: new Date() }
+      })
+      .sort({ scheduledAt: 1 })
+      .limit(5)
+      .toArray();
+
+      analytics.upcomingPosts = upcomingPosts.map(post => ({
+        platform: post.platform === 'instagram' ? 'Instagram' : 'YouTube',
+        caption: post.caption ? post.caption.substring(0, 100) + '...' : 'AI-generated caption',
+        thumbnail: post.s3Url || '/default-video.jpg',
+        scheduledTime: post.scheduledAt
+      }));
+
+      await client.close();
+    } catch (dbError) {
+      console.warn('⚠️ [ANALYTICS] Database error:', dbError.message);
+      analytics.upcomingPosts = [];
+    }
+
+    console.log('✅ [ANALYTICS] Real analytics data compiled successfully');
+    
+    res.status(200).json({
+      success: true,
+      ...analytics,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ [ANALYTICS ERROR]', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch analytics',
+      message: error.message
+    });
+  }
+});
+
 // Individual platform endpoints
 app.get('/api/instagram/analytics', async (req, res) => {
   try {
