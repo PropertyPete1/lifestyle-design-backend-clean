@@ -1,26 +1,48 @@
 // ✅ Instagram Visual Scraper Service - Phase 9 AutoPilot System
 let fetch;
 try {
+  // Try node-fetch first
   fetch = require('node-fetch');
 } catch (err) {
-  // Fallback to axios for Render compatibility
-  const axios = require('axios');
-  fetch = async (url, options = {}) => {
-    const config = {
-      url,
-      method: options.method || 'GET',
-      headers: options.headers || {},
-      data: options.body
+  try {
+    // Try built-in fetch (Node 18+)
+    fetch = globalThis.fetch;
+    if (!fetch) throw new Error('No fetch available');
+  } catch (err2) {
+    // Final fallback: create a simple HTTP client
+    const https = require('https');
+    const http = require('http');
+    const { URL } = require('url');
+    
+    fetch = async (url, options = {}) => {
+      return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+        
+        const req = client.request(url, {
+          method: options.method || 'GET',
+          headers: options.headers || {}
+        }, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            resolve({
+              ok: res.statusCode >= 200 && res.statusCode < 300,
+              status: res.statusCode,
+              json: () => Promise.resolve(JSON.parse(data)),
+              text: () => Promise.resolve(data)
+            });
+          });
+        });
+        
+        req.on('error', reject);
+        if (options.body) req.write(options.body);
+        req.end();
+      });
     };
-    const response = await axios(config);
-    return {
-      ok: response.status >= 200 && response.status < 300,
-      status: response.status,
-      json: async () => response.data,
-      buffer: async () => response.data
-    };
-  };
+  }
 }
+
 const puppeteer = require('puppeteer');
 
 /**
