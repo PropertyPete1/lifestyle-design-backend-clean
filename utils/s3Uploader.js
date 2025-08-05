@@ -9,14 +9,18 @@ const path = require('path');
 
 // Configure AWS SDK
 const configureAWS = (settings) => {
+  if (!settings.s3AccessKey || !settings.s3SecretKey || !settings.s3BucketName) {
+    throw new Error('Missing S3 credentials: accessKey, secretKey, and bucketName are required');
+  }
+
   AWS.config.update({
     accessKeyId: settings.s3AccessKey,
     secretAccessKey: settings.s3SecretKey,
     region: settings.s3Region || 'us-east-1',
   });
+  
+  console.log('✅ [AWS CONFIG] Configured with region:', settings.s3Region || 'us-east-1');
 };
-
-const s3 = new AWS.S3();
 
 /**
  * Upload file to S3 and return public URL
@@ -32,6 +36,13 @@ async function uploadToS3(localPath, s3Key, settings) {
     // Configure AWS with user's credentials
     configureAWS(settings);
     
+    // Create S3 instance with configured credentials
+    const s3Instance = new AWS.S3({
+      accessKeyId: settings.s3AccessKey,
+      secretAccessKey: settings.s3SecretKey,
+      region: settings.s3Region || 'us-east-1'
+    });
+    
     const fileContent = fs.readFileSync(localPath);
     const params = {
       Bucket: settings.s3BucketName,
@@ -41,7 +52,7 @@ async function uploadToS3(localPath, s3Key, settings) {
       ContentType: 'video/mp4',
     };
 
-    const result = await s3.upload(params).promise();
+    const result = await s3Instance.upload(params).promise();
     const publicUrl = `https://${settings.s3BucketName}.s3.amazonaws.com/${s3Key}`;
     
     console.log('✅ [S3 UPLOAD] Success:', publicUrl);
@@ -67,6 +78,13 @@ async function uploadBufferToS3(buffer, s3Key, settings) {
     // Configure AWS with user's credentials
     configureAWS(settings);
     
+    // Create S3 instance with configured credentials
+    const s3Instance = new AWS.S3({
+      accessKeyId: settings.s3AccessKey,
+      secretAccessKey: settings.s3SecretKey,
+      region: settings.s3Region || 'us-east-1'
+    });
+    
     const params = {
       Bucket: settings.s3BucketName,
       Key: s3Key,
@@ -75,7 +93,7 @@ async function uploadBufferToS3(buffer, s3Key, settings) {
       ContentType: 'video/mp4',
     };
 
-    const result = await s3.upload(params).promise();
+    const result = await s3Instance.upload(params).promise();
     const publicUrl = `https://${settings.s3BucketName}.s3.amazonaws.com/${s3Key}`;
     
     console.log('✅ [S3 BUFFER UPLOAD] Success:', publicUrl);
