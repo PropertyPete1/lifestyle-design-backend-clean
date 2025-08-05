@@ -32,6 +32,36 @@ const settingsSchema = new mongoose.Schema({
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
 
+// Scheduler Queue schema for autopilot posts
+const schedulerQueueSchema = new mongoose.Schema({
+  filename: String,
+  caption: String,
+  platform: {
+    type: String,
+    enum: ['instagram', 'youtube'],
+    default: 'instagram'
+  },
+  scheduledTime: {
+    type: Date,
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed', 'scheduled'],
+    default: 'scheduled'
+  },
+  source: {
+    type: String,
+    default: 'autopilot'
+  },
+  insertedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { timestamps: true });
+
+const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
+
 // CORS configuration for frontend-v2
 app.use(cors({
   origin: [
