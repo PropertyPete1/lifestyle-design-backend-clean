@@ -2,9 +2,9 @@
   "name": "lifestyle-design-backend-v2",
   "version": "2.0.0",
   "description": "Backend v2 for Lifestyle Design Auto Poster",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node index.js",
     "build": "echo 'Build complete - JavaScript ready'",
     "dev": "ts-node server.ts",
     "postinstall": "echo 'Dependencies installed'",
