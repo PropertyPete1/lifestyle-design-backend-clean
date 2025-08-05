@@ -8,6 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import apiRoutes from './src/routes/index';
+import settingsRoute from './routes/settings';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -18,7 +19,8 @@ app.use(cors({
     'http://localhost:3000',
     'http://localhost:3001', 
     'https://frontend-v2-sage.vercel.app',
-    'https://lifestyle-design-social.vercel.app'
+    'https://lifestyle-design-social.vercel.app',
+    'https://lifestyle-design-frontend-clean.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -43,6 +45,7 @@ const connectDB = async () => {
 
 // Routes
 app.use('/api', apiRoutes);
+app.use('/api/settings', settingsRoute);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -82,6 +85,8 @@ const startServer = async () => {
     console.log('🚀 [SERVER] Backend v2 running on port', PORT);
     console.log('📋 [SERVER] Available endpoints:');
     console.log('   GET  /health - Health check');
+    console.log('   GET  /api/settings - Load settings (ROUTER)');
+    console.log('   POST /api/settings - Save settings (ROUTER)');
     console.log('   POST /api/autopost/run-now - Queue video for posting');
     console.log('   GET  /api/scheduler/status - Get queue status');
     console.log('   POST /api/autopilot/run - Process queued videos');

@@ -1,14 +1,12 @@
 {
   "name": "lifestyle-design-backend-v2",
   "version": "2.0.0",
-  "description": "Backend v2 for Lifestyle Design Auto Poster with clean autopilot system",
-  "main": "server-simple.js",
+  "description": "Backend v2 for Lifestyle Design Auto Poster",
+  "main": "server.js",
   "scripts": {
-    "start": "node server-simple.js",
-    "start-ts": "node dist/server.js",
-    "dev": "npx ts-node --transpile-only server.ts",
-    "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "build": "echo 'No build step needed'",
+    "dev": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -12,13 +12,15 @@ const { MongoClient } = require('mongodb');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// CORS configuration
+// CORS configuration for frontend-v2
 app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:3001', 
     'https://frontend-v2-sage.vercel.app',
-    'https://lifestyle-design-social.vercel.app'
+    'https://lifestyle-design-social.vercel.app',
+    'https://lifestyle-design-frontend-clean.vercel.app',
+    'https://lifestyle-design-frontend-v2.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -29,13 +31,47 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ✅ SETTINGS ROUTES FOR FRONTEND SAVE/LOAD
-const Settings = require('./src/models/settings.js');
-const settingsRoute = require('./src/routes/settingsRoute.js');
+// ✅ SETTINGS MODEL - COMPLETE SCHEMA FOR FRONTEND
+const settingsSchema = new mongoose.Schema({
+  // Instagram API
+  instagramToken: String,
+  igBusinessId: String,
+  
+  // YouTube API
+  youtubeClientId: String,
+  youtubeClientSecret: String,
+  youtubeAccessToken: String,
+  youtubeRefreshToken: String,
+  youtubeChannelId: String,
+  
+  // AWS S3
+  s3AccessKey: String,
+  s3SecretKey: String,
+  s3BucketName: String,
+  
+  // Database
+  mongoURI: String,
+  
+  // AI Services
+  openaiApiKey: String,
+  
+  // Cloud Storage
+  dropboxToken: String,
+  
+  // Video Generation
+  runwayApiKey: String,
+  
+  // AutoPilot Settings
+  maxPosts: { type: Number, default: 4 },
+  autopilotEnabled: { type: Boolean, default: false },
+  cartoonMode: { type: Boolean, default: false },
+  schedulerType: { type: String, default: 'daily' },
+}, { 
+  timestamps: true,
+  collection: 'SettingsClean' // Clean collection name
+});
 
-// ✅ CRITICAL LINE - REGISTER SETTINGS ROUTER
-app.use('/api/settings', settingsRoute);
-console.log('✅ Settings router registered at /api/settings in server.js');
+const Settings = mongoose.model('Settings', settingsSchema);
 
 app.get('/api/settings', async (req, res) => {
   try {
@@ -71,6 +107,131 @@ app.post('/api/settings', async (req, res) => {
 });
 
 console.log('✅ Settings routes registered in server.js');
+
+// Analytics services
+const { getInstagramAnalytics } = require('./services/instagramAnalytics');
+const { getYouTubeAnalytics } = require('./services/youtubeAnalytics');
+
+// Dashboard analytics endpoint - combines both platforms
+app.get('/api/dashboard/analytics', async (req, res) => {
+  try {
+    console.log('📊 [DASHBOARD ANALYTICS] Fetching combined analytics...');
+    
+    // Get analytics from both platforms in parallel
+    const [instagramData, youtubeData] = await Promise.all([
+      getInstagramAnalytics(Settings),
+      getYouTubeAnalytics(Settings)
+    ]);
+    
+    const response = {
+      instagram: {
+        followers: instagramData.followers,
+        engagement: instagramData.engagement,
+        posts: instagramData.posts,
+        growthRate: instagramData.growthRate,
+        isPosting: instagramData.isPosting,
+        error: instagramData.error
+      },
+      youtube: {
+        subscribers: youtubeData.subscribers,
+        views: youtubeData.views,
+        videos: youtubeData.videos,
+        growthRate: youtubeData.growthRate,
+        isPosting: youtubeData.isPosting,
+        error: youtubeData.error
+      },
+      lastUpdated: new Date().toISOString()
+    };
+    
+    console.log('✅ [DASHBOARD ANALYTICS] Combined data:', response);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ [DASHBOARD ANALYTICS ERROR]', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch analytics',
+      instagram: { followers: 0, growthRate: 0, isPosting: false },
+      youtube: { subscribers: 0, growthRate: 0, isPosting: false }
+    });
+  }
+});
+
+// Individual platform endpoints
+app.get('/api/instagram/analytics', async (req, res) => {
+  try {
+    const data = await getInstagramAnalytics(Settings);
+    res.json(data);
+  } catch (error) {
+    console.error('❌ [INSTAGRAM ANALYTICS ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch Instagram analytics' });
+  }
+});
+
+app.get('/api/youtube/analytics', async (req, res) => {
+  try {
+    const data = await getYouTubeAnalytics(Settings);
+    res.json(data);
+  } catch (error) {
+    console.error('❌ [YOUTUBE ANALYTICS ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch YouTube analytics' });
+  }
+});
+
+// Chart data endpoint for dashboard graphs
+app.get('/api/chart/status', async (req, res) => {
+  try {
+    console.log('📈 [CHART DATA] Fetching chart data...');
+    
+    // Get current analytics data
+    const [instagramData, youtubeData] = await Promise.all([
+      getInstagramAnalytics(Settings),
+      getYouTubeAnalytics(Settings)
+    ]);
+    
+    // Generate sample chart data points (in real app, this would come from historical data)
+    const generateChartData = (baseValue, variance = 0.1) => {
+      const points = [];
+      const now = new Date();
+      
+      for (let i = 23; i >= 0; i--) {
+        const timestamp = new Date(now.getTime() - i * 60 * 60 * 1000); // Last 24 hours
+        const variation = (Math.random() - 0.5) * variance * baseValue;
+        points.push({
+          timestamp: timestamp.toISOString(),
+          value: Math.max(0, Math.round(baseValue + variation))
+        });
+      }
+      return points;
+    };
+    
+    const chartData = {
+      instagram: {
+        engagement: generateChartData(instagramData.engagement || 50, 0.2),
+        followers: generateChartData(instagramData.followers || 1000, 0.05),
+        isActive: instagramData.isPosting
+      },
+      youtube: {
+        engagement: generateChartData(youtubeData.engagement || 30, 0.3),
+        subscribers: generateChartData(youtubeData.subscribers || 500, 0.03),
+        isActive: youtubeData.isPosting
+      },
+      lastUpdated: new Date().toISOString()
+    };
+    
+    console.log('✅ [CHART DATA] Generated chart data');
+    res.json(chartData);
+    
+  } catch (error) {
+    console.error('❌ [CHART DATA ERROR]', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch chart data',
+      instagram: { engagement: [], followers: [], isActive: false },
+      youtube: { engagement: [], subscribers: [], isActive: false }
+    });
+  }
+});
+
+console.log('✅ Analytics routes registered in server.js');
 
 // MongoDB connection
 const connectDB = async () => {
