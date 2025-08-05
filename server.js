@@ -3,7 +3,7 @@
  * Main entry point for the Lifestyle Design Auto Poster backend
  */
 
-require('dotenv/config');
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
