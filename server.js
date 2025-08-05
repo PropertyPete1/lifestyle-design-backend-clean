@@ -65,7 +65,10 @@ app.use(cors({
     'https://lifestyle-design-frontend-clean.vercel.app',
     'https://lifestyle-design-frontend-v2.vercel.app',
     'https://lifestyle-design-frontend-clean-propertypete1s-projects.vercel.app',
-    'https://lifestyle-design-frontend-clean-git-main-propertypete1s-projects.vercel.app'
+    'https://lifestyle-design-frontend-clean-git-main-propertypete1s-projects.vercel.app',
+    // Additional Vercel auto-generated URLs
+    'https://lifestyle-design-frontend-v2-propertypete1s-projects.vercel.app',
+    'https://lifestyle-design-frontend-v2-git-main-propertypete1s-projects.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
