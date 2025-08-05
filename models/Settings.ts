@@ -48,6 +48,21 @@ const settingsSchema = new mongoose.Schema({
   // Scheduling Settings
   postsPerDay: { type: Number, default: 3 },
   lastAutopilotRun: Date,
+  
+  // Analytics Cache Fields
+  cachedIgFollowers: Number,
+  cachedIgReach: Number,
+  cachedIgEngagement: Number,
+  cachedIgMediaCount: Number,
+  cachedIgUsername: String,
+  cachedIgAccountName: String,
+  cachedIgLastUpdate: Date,
+  
+  cachedYouTubeSubscribers: Number,
+  cachedYouTubeViews: Number,
+  cachedYouTubeVideos: Number,
+  cachedYouTubeChannelTitle: String,
+  cachedYouTubeLastUpdate: Date,
 }, { 
   timestamps: true,
   collection: 'SettingsClean' // Use clean collection name

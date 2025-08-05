@@ -65,73 +65,44 @@ router.get('/', async (req, res) => {
       }
     };
 
-    // Fetch Instagram analytics if configured
+    // Fetch Instagram analytics using enhanced service
     if (settings.instagramToken && settings.igBusinessId) {
-      console.log('📷 [ANALYTICS] Fetching Instagram data with credentials...');
-      console.log(`🔑 Using IG Business ID: ${settings.igBusinessId}`);
-      console.log(`🔑 Using IG Token: ${settings.instagramToken ? 'Present' : 'Missing'}`);
+      console.log('📷 [ANALYTICS] Fetching Instagram data using enhanced service...');
       
       try {
-        // Get Instagram account info
-        const accountUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}?fields=followers_count,media_count&access_token=${settings.instagramToken}`;
-        console.log(`📡 [IG] Fetching: ${accountUrl.replace(settings.instagramToken, 'TOKEN_HIDDEN')}`);
-        
-        const accountResponse = await fetch(accountUrl);
-        const accountData = await accountResponse.json();
+        // Use our enhanced Instagram analytics service with smart caching
+        const instagramAnalytics = require('../../services/instagramAnalytics');
+        const igData = await instagramAnalytics.getInstagramAnalytics(settings);
 
-        console.log('📊 [IG] Account response:', accountData);
+        console.log('📊 [IG] Service response:', igData);
 
-        if (accountData.error) {
-          console.error('❌ [IG ANALYTICS] API Error:', accountData.error);
-          analytics.instagram.followers = `Error: ${accountData.error.message}`;
+        if (igData.error && !igData.cached) {
+          console.error('❌ [IG ANALYTICS] Service Error:', igData.error);
+          analytics.instagram.followers = `Error: ${igData.error}`;
         } else {
-          analytics.instagram.followers = accountData.followers_count || 0;
-          console.log(`✅ [IG] Got ${accountData.followers_count} followers`);
+          // Map the data from our Instagram analytics service
+          analytics.instagram.followers = igData.followers || 0;
+          analytics.instagram.reach = igData.reach || 0;
+          analytics.instagram.engagementRate = igData.engagementRate || 0;
+          analytics.instagram.mediaCount = igData.mediaCount || 0;
+          analytics.instagram.accountName = igData.accountName || 'Unknown';
+          analytics.instagram.username = igData.username || 'unknown';
+          analytics.instagram.lastUpdated = igData.lastUpdated;
+          analytics.instagram.source = igData.source;
           
-          // Get Instagram insights for reach/impressions  
-          const insightsUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/insights?metric=impressions,reach,profile_views&period=day&access_token=${settings.instagramToken}`;
-          console.log(`📡 [IG] Fetching insights...`);
-          
-          const insightsResponse = await fetch(insightsUrl);
-          const insightsData = await insightsResponse.json();
-
-          console.log('📊 [IG] Insights response:', insightsData);
-
-          if (!insightsData.error && insightsData.data) {
-            const reachMetric = insightsData.data.find(m => m.name === 'reach');
-            if (reachMetric && reachMetric.values && reachMetric.values.length > 0) {
-              analytics.instagram.reach = reachMetric.values[reachMetric.values.length - 1].value || 0;
-              console.log(`✅ [IG] Got reach: ${analytics.instagram.reach}`);
+          // Add cache/error info if present
+          if (igData.cached) {
+            analytics.instagram.cached = true;
+            analytics.instagram.stale = igData.stale;
+            if (igData.error) {
+              analytics.instagram.cacheReason = igData.error;
             }
-          } else {
-            console.log('⚠️ [IG] No insights data or error:', insightsData.error);
           }
-
-          // Calculate engagement rate from recent posts
-          const mediaUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=like_count,comments_count&limit=10&access_token=${settings.instagramToken}`;
-          console.log(`📡 [IG] Fetching media for engagement...`);
           
-          const mediaResponse = await fetch(mediaUrl);
-          const mediaData = await mediaResponse.json();
-
-          console.log('📊 [IG] Media response:', mediaData);
-
-          if (!mediaData.error && mediaData.data && mediaData.data.length > 0) {
-            let totalEngagement = 0;
-            mediaData.data.forEach(post => {
-              totalEngagement += (post.like_count || 0) + (post.comments_count || 0);
-            });
-            const avgEngagement = totalEngagement / mediaData.data.length;
-            analytics.instagram.engagementRate = accountData.followers_count > 0 
-              ? avgEngagement / accountData.followers_count 
-              : 0;
-            console.log(`✅ [IG] Calculated engagement rate: ${(analytics.instagram.engagementRate * 100).toFixed(2)}%`);
-          } else {
-            console.log('⚠️ [IG] No media data or error:', mediaData.error);
-          }
+          console.log(`✅ [IG] Got ${analytics.instagram.followers} followers, ${analytics.instagram.engagementRate}% engagement for @${analytics.instagram.username}${igData.cached ? ' (cached)' : ''}`);
         }
       } catch (igError) {
-        console.error('❌ [IG ANALYTICS] Fetch error:', igError.message);
+        console.error('❌ [IG ANALYTICS] Service error:', igError.message);
         analytics.instagram.followers = `Error: ${igError.message}`;
       }
     } else {
