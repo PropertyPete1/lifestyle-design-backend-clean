@@ -416,6 +416,36 @@ app.get('/api/scheduler/status', async (req, res) => {
   }
 });
 
+// Instagram analytics endpoint
+app.get('/api/instagram/analytics', async (req, res) => {
+  try {
+    if (!instagramAnalytics) {
+      return res.json({ followers: 0, reach: 0, posts: 0, engagement: 0, message: 'Instagram analytics service not available' });
+    }
+    
+    const analytics = await instagramAnalytics.getInstagramAnalytics(SettingsModel);
+    res.json(analytics);
+  } catch (error) {
+    console.error('❌ [INSTAGRAM ANALYTICS ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch Instagram analytics', followers: 0, reach: 0 });
+  }
+});
+
+// YouTube analytics endpoint  
+app.get('/api/youtube/analytics', async (req, res) => {
+  try {
+    if (!youtubeAnalytics) {
+      return res.json({ subscribers: 0, reach: 0, views: 0, message: 'YouTube analytics service not available' });
+    }
+    
+    const analytics = await youtubeAnalytics.getYouTubeAnalytics(SettingsModel);
+    res.json(analytics);
+  } catch (error) {
+    console.error('❌ [YOUTUBE ANALYTICS ERROR]', error);
+    res.status(500).json({ error: 'Failed to fetch YouTube analytics', subscribers: 0, reach: 0 });
+  }
+});
+
 // Test API validation endpoint for settings page
 app.post('/api/test/validate-apis', async (req, res) => {
   try {
