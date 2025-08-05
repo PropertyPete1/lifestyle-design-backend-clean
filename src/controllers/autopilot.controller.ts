@@ -14,6 +14,7 @@ import Settings from '../models/Settings';
 const { scrapeLatestInstagramVideos, getLast30AutopilotPosts, generateContentFingerprint, downloadInstagramMedia } = require('../../services/instagramScraper');
 const { uploadToS3, generateAutopilotFilename } = require('../../services/s3Uploader');
 const { generateSmartCaption, getBestTimeToPost, fetchInstagramTrendingAudio, scheduleInstagramUpload, logAutopilotSchedule } = require('../../services/captionAI');
+const { uploadToS3Enhanced, scrapeInstagramEnhanced } = require('../../services/quickfix');
 
 /**
  * STEP 3: AutoPilot run endpoint - Posts videos with cleanup, no MongoDB file saving
