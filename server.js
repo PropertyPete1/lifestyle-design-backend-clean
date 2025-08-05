@@ -12,13 +12,15 @@ const { MongoClient } = require('mongodb');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// CORS configuration
+// CORS configuration for frontend-v2
 app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:3001', 
     'https://frontend-v2-sage.vercel.app',
-    'https://lifestyle-design-social.vercel.app'
+    'https://lifestyle-design-social.vercel.app',
+    'https://lifestyle-design-frontend-clean.vercel.app',
+    'https://lifestyle-design-frontend-v2.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
