@@ -32,6 +32,26 @@ const settingsSchema = new mongoose.Schema({
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
 
+// Scheduler Queue Schema for autopilot posts
+const schedulerQueueSchema = new mongoose.Schema({
+  platform: { type: String, required: true }, // 'instagram' or 'youtube'
+  videoUrl: { type: String, required: true }, // S3 URL
+  caption: { type: String, required: true },
+  audio: { type: String }, // Trending audio URL (Instagram only)
+  scheduledTime: { type: Date, required: true },
+  thumbnailUrl: { type: String },
+  fingerprint: { type: String }, // For duplicate detection
+  thumbnailHash: { type: String }, // For visual similarity
+  originalVideoId: { type: String }, // Original Instagram video ID
+  engagement: { type: Number }, // Original engagement count
+  status: { type: String, enum: ['scheduled', 'posted', 'failed'], default: 'scheduled' },
+  source: { type: String, default: 'autopilot' },
+  postedAt: { type: Date },
+  error: { type: String }
+}, { timestamps: true });
+
+const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
+
 // CORS configuration for frontend-v2
 app.use(cors({
   origin: [
@@ -127,34 +147,37 @@ app.post('/api/autopilot/run', async (req, res) => {
       return res.status(400).json({ error: 'AutoPilot is disabled. Enable it in settings first.' });
     }
 
-    // Mock successful run for now
-    settings.lastAutopilotRun = new Date();
-    await settings.save();
-
-    console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
-
-    res.json({
-      success: true,
-      message: 'AutoPilot run completed successfully',
-      videosScraped: 50,
-      videosScheduled: 2,
-      selectedVideo: {
-        engagement: 15000,
-        duration: 30
-      },
-      scheduledPosts: [
-        {
-          platform: 'instagram',
-          scheduledTime: new Date(Date.now() + 3600000),
-          caption: 'Amazing real estate opportunity with stunning views...'
-        },
-        {
-          platform: 'youtube',
-          scheduledTime: new Date(Date.now() + 7200000),
-          caption: 'Top real estate tips for 2025...'
-        }
-      ]
-    });
+    // Import and run real autopilot logic
+    const { runInstagramAutoPilot } = require('./phases/autopilot');
+    
+    // Run the real autopilot system
+    const result = await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
+    
+    if (result.success) {
+      // Update last run time
+      settings.lastAutopilotRun = new Date();
+      await settings.save();
+      
+      console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
+      
+      res.json({
+        success: true,
+        message: result.message,
+        videosScraped: 500, // Always scrapes 500
+        videosScheduled: result.queuedPosts?.length || 0,
+        nextRun: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+        selectedVideo: result.selectedVideo,
+        scheduledPosts: result.queuedPosts || [],
+        s3Url: result.s3Url
+      });
+    } else {
+      console.log('⚠️ [AUTOPILOT] AutoPilot run failed:', result.message);
+      res.status(400).json({
+        success: false,
+        error: result.message,
+        details: result.error
+      });
+    }
 
   } catch (error) {
     console.error('❌ [AUTOPILOT RUN ERROR]', error);
