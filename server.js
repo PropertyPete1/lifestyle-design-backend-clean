@@ -157,22 +157,128 @@ app.post('/api/autopilot/run', async (req, res) => {
       return res.status(400).json({ error: 'AutoPilot is disabled. Enable it in settings first.' });
     }
 
-    // Import and run the comprehensive autopilot logic
-    const { runInstagramAutoPilot } = require('./phases/autopilot');
-    const autopilotResult = await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
+    // ✅ FULL AUTOPILOT SYSTEM IMPLEMENTATION
+    console.log('🤖 [AUTOPILOT] Starting comprehensive autopilot system...');
     
+    // STEP 1: Check required credentials for S3, Instagram, OpenAI
+    if (!settings.s3AccessKey || !settings.s3SecretKey || !settings.s3BucketName) {
+      return res.status(400).json({ error: 'Missing S3 credentials for video hosting' });
+    }
+    
+    if (!settings.instagramToken || !settings.igBusinessId) {
+      return res.status(400).json({ error: 'Missing Instagram credentials' });
+    }
+    
+    // STEP 2: Import comprehensive autopilot utilities
+    const { uploadBufferToS3, generateS3Key } = require('./utils/s3Uploader');
+    const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('./utils/instagramScraper');
+    const { getLast30PostedVideos, filterUniqueVideos } = require('./utils/postHistory');
+    const { generateSmartCaptionWithKey, findTrendingAudio } = require('./services/captionAI');
+    
+    // STEP 3: Scrape latest 500 Instagram videos using Visual Scraper
+    console.log('📱 [AUTOPILOT] Step 1: Scraping 500 Instagram videos...');
+    const scrapedVideos = await scrapeInstagramEngagement(settings.igBusinessId, settings.instagramToken, 500);
+    
+    // STEP 4: Sort by engagement descending (≥10,000 engagement)
+    const qualifiedVideos = scrapedVideos
+      .filter(v => v.engagement >= 10000)
+      .sort((a, b) => b.engagement - a.engagement);
+    
+    console.log(`📊 [AUTOPILOT] Found ${qualifiedVideos.length} high-engagement videos`);
+    
+    // STEP 5: Get last 30 POSTED videos (not date-based)
+    const last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    
+    let selectedVideo = null;
+    let scheduledPosts = [];
+    
+    // STEP 6: Find unique video (not posted, not visually similar)
+    for (const video of qualifiedVideos) {
+      const alreadyPosted = last30Posted.some(prev => prev.fingerprint === video.fingerprint);
+      const looksSimilar = last30Posted.some(prev => prev.thumbnailHash === video.thumbnailHash || prev.caption === video.caption);
+      
+      if (!alreadyPosted && !looksSimilar) {
+        console.log(`🎯 [AUTOPILOT] Selected video with ${video.engagement} engagement`);
+        selectedVideo = video;
+        
+        // STEP 7: Download video from Instagram
+        console.log('⬇️ [AUTOPILOT] Downloading video from Instagram...');
+        const localPath = await downloadVideoFromInstagram(video.url);
+        
+        // STEP 8: Upload to S3 for hosting
+        console.log('☁️ [AUTOPILOT] Uploading to S3...');
+        const s3Key = generateS3Key('auto', 'video.mp4');
+        const s3Url = await uploadBufferToS3(localPath, s3Key, settings);
+        
+        // STEP 9: Generate smart caption with OpenAI
+        console.log('🧠 [AUTOPILOT] Generating smart caption...');
+        const smartCaption = await generateSmartCaptionWithKey(video.caption, settings.openaiApiKey);
+        
+        // STEP 10: Get trending audio (if enabled)
+        let trendingAudio = null;
+        if (settings.useTrendingAudio) {
+          console.log('🎵 [AUTOPILOT] Finding trending audio...');
+          trendingAudio = await findTrendingAudio('instagram');
+        }
+        
+        // STEP 11: Smart scheduling (5-10 PM optimal window)
+        const getRandomPostTime = () => {
+          const hour = Math.floor(Math.random() * (22 - 17 + 1)) + 17; // 5-10 PM
+          const scheduledTime = new Date();
+          scheduledTime.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
+          return scheduledTime;
+        };
+        
+        // STEP 12: Queue for Instagram (and YouTube if enabled)
+        const platforms = [];
+        if (settings.postToInstagram !== false) platforms.push('instagram');
+        if (settings.postToYouTube === true) platforms.push('youtube');
+        
+        for (const platform of platforms) {
+          const scheduledTime = getRandomPostTime();
+          
+          const queueEntry = new SchedulerQueueModel({
+            filename: s3Key,
+            caption: smartCaption,
+            platform: platform,
+            scheduledTime: scheduledTime,
+            status: 'scheduled',
+            source: 'autopilot',
+            s3Url: s3Url,
+            engagement: video.engagement,
+            trendingAudio: trendingAudio
+          });
+          
+          await queueEntry.save();
+          console.log(`📅 [AUTOPILOT] Scheduled ${platform} post for ${scheduledTime.toLocaleString()}`);
+          
+          scheduledPosts.push({
+            platform: platform,
+            scheduledTime: scheduledTime,
+            caption: smartCaption.length > 50 ? smartCaption.substring(0, 47) + '...' : smartCaption
+          });
+        }
+        
+        break; // Only process one video per autopilot run
+      }
+    }
+    
+    // STEP 13: Update last run time and respond
     settings.lastAutopilotRun = new Date();
     await settings.save();
-
-    console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
+    
+    console.log('✅ [AUTOPILOT] Comprehensive autopilot run completed successfully');
     
     res.json({
       success: true,
       message: 'AutoPilot run completed successfully',
-      videosScraped: autopilotResult.videosScraped || 0,
-      videosScheduled: autopilotResult.videosScheduled || 0,
-      selectedVideo: autopilotResult.selectedVideo || null,
-      scheduledPosts: autopilotResult.scheduledPosts || []
+      videosScraped: scrapedVideos.length,
+      videosScheduled: scheduledPosts.length,
+      selectedVideo: selectedVideo ? {
+        engagement: selectedVideo.engagement,
+        duration: selectedVideo.duration || 30
+      } : null,
+      scheduledPosts: scheduledPosts
     });
     
   } catch (error) {
