@@ -48,42 +48,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api/settings', settingsRoute);
 console.log('✅ Settings router registered at /api/settings');
 
-// ✅ DIRECT SETTINGS ROUTES - GUARANTEED TO WORK (BACKUP)
-app.get('/api/settings', async (req, res) => {
-  try {
-    console.log('⚙️ [DIRECT] GET /api/settings request received');
-    const settings = await Settings.findOne().sort({ updatedAt: -1 }).lean();
-    console.log('⚙️ [DIRECT] Retrieved settings:', settings);
-    res.json(settings || {});
-  } catch (err) {
-    console.error('❌ [DIRECT] GET settings error:', err);
-    res.status(500).json({ error: 'Failed to load settings' });
-  }
-});
-
-app.post('/api/settings', async (req, res) => {
-  try {
-    console.log('⚙️ [DIRECT] POST /api/settings request received');
-    console.log('⚙️ [DIRECT] Request body:', JSON.stringify(req.body, null, 2));
-    
-    const existing = await Settings.findOne();
-    if (existing) {
-      await Settings.updateOne({}, req.body);
-      console.log('⚙️ [DIRECT] Settings updated successfully');
-    } else {
-      const newSettings = new Settings(req.body);
-      await newSettings.save();
-      console.log('⚙️ [DIRECT] Settings created successfully');
-    }
-    
-    res.json({ success: true });
-  } catch (err) {
-    console.error('❌ [DIRECT] POST settings error:', err);
-    res.status(500).json({ error: 'Failed to save settings' });
-  }
-});
-
-console.log('✅ DIRECT /api/settings routes registered');
+// ✅ ROUTER-ONLY APPROACH - Removed conflicting direct routes
+// Only using: app.use('/api/settings', settingsRoute) - line 48
 
 // MongoDB connection
 const connectDB = async () => {
