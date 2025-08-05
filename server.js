@@ -163,9 +163,23 @@ app.post('/api/autopilot/run', async (req, res) => {
 
 console.log('✅ AutoPilot routes registered directly in server.js');
 
-// Analytics services
-const instagramAnalytics = require('./services/instagramAnalytics');
-const youtubeAnalytics = require('./services/youtubeAnalytics');
+// Analytics services (with error handling for Render deployment)
+let instagramAnalytics, youtubeAnalytics;
+try {
+  instagramAnalytics = require('./services/instagramAnalytics');
+  console.log('✅ Instagram analytics service loaded');
+} catch (error) {
+  console.log('⚠️ Instagram analytics service failed to load:', error.message);
+  instagramAnalytics = null;
+}
+
+try {
+  youtubeAnalytics = require('./services/youtubeAnalytics');
+  console.log('✅ YouTube analytics service loaded');
+} catch (error) {
+  console.log('⚠️ YouTube analytics service failed to load:', error.message);
+  youtubeAnalytics = null;
+}
 
 // Unified dashboard analytics endpoint
 app.get('/api/analytics', async (req, res) => {
@@ -181,8 +195,8 @@ app.get('/api/analytics', async (req, res) => {
     }
 
     const [igData, ytData] = await Promise.allSettled([
-      instagramAnalytics.getInstagramAnalytics(SettingsModel),
-      youtubeAnalytics.getYouTubeAnalytics(SettingsModel)
+      instagramAnalytics ? instagramAnalytics.getInstagramAnalytics(SettingsModel) : Promise.resolve({ followers: 0, reach: 0, engagementRate: 0 }),
+      youtubeAnalytics ? youtubeAnalytics.getYouTubeAnalytics(SettingsModel) : Promise.resolve({ subscribers: 0, reach: 0 })
     ]);
 
     res.json({
