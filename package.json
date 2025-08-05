@@ -4,10 +4,10 @@
   "description": "Backend v2 for Lifestyle Design Auto Poster",
   "main": "server.js",
   "scripts": {
-    "start": "ts-node server.ts",
-    "build": "echo 'Build complete - using optimized Render install script'",
-    "dev": "node server.js",
-    "postinstall": "echo 'Core dependencies ready'",
+    "start": "node server.js",
+    "build": "echo 'Build complete - JavaScript ready'",
+    "dev": "ts-node server.ts",
+    "postinstall": "echo 'Dependencies installed'",
     "render-fast": "npm ci --only=production --silent --no-audit --no-fund || npm install --production --silent --no-audit --no-fund"
   },
   "engines": {
