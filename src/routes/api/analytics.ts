@@ -138,67 +138,44 @@ router.get('/', async (req, res) => {
       console.log('⚠️ [IG] Missing credentials - instagramToken:', !!settings.instagramToken, 'igBusinessId:', !!settings.igBusinessId);
     }
 
-    // Fetch YouTube analytics if configured
-    if (settings.youtubeAccessToken && settings.youtubeChannelId) {
-      console.log('📺 [ANALYTICS] Fetching YouTube data with credentials...');
-      console.log(`🔑 Using YT Channel ID: ${settings.youtubeChannelId}`);
+    // Fetch YouTube analytics if configured  
+    if (settings.youtubeAccessToken) {
+      console.log('📺 [ANALYTICS] Fetching YouTube data using youtubeAnalytics service...');
       console.log(`🔑 Using YT Token: ${settings.youtubeAccessToken ? 'Present' : 'Missing'}`);
+      console.log(`🔑 Using YT Refresh Token: ${settings.youtubeRefreshToken ? 'Present' : 'Missing'}`);
+      console.log(`🔑 Using YT Client ID: ${settings.youtubeClientId ? 'Present' : 'Missing'}`);
+      console.log(`🔑 Using YT Client Secret: ${settings.youtubeClientSecret ? 'Present' : 'Missing'}`);
       
       try {
-        // Get YouTube channel statistics
-        const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${settings.youtubeChannelId}&access_token=${settings.youtubeAccessToken}`;
-        console.log(`📡 [YT] Fetching: ${channelUrl.replace(settings.youtubeAccessToken, 'TOKEN_HIDDEN')}`);
-        
-        const channelResponse = await fetch(channelUrl);
-        const channelData = await channelResponse.json();
+        // Use our YouTube analytics service with token refresh capability
+        const youtubeAnalytics = require('../../services/youtubeAnalytics');
+        const youtubeData = await youtubeAnalytics.getYouTubeAnalytics(settings);
 
-        console.log('📊 [YT] Channel response:', channelData);
+        console.log('📊 [YT] Service response:', youtubeData);
 
-        if (channelData.error) {
-          console.error('❌ [YT ANALYTICS] API Error:', channelData.error);
-          analytics.youtube.subscribers = `Error: ${channelData.error.message}`;
-          
-          // If access token expired, try to refresh
-          if (channelData.error.message && (
-              channelData.error.message.includes('invalid_grant') || 
-              channelData.error.message.includes('expired') ||
-              channelData.error.message.includes('Invalid Credentials')
-          )) {
-            console.log('🔄 [YT ANALYTICS] Attempting token refresh...');
-            const refreshed = await refreshYouTubeToken(settings);
-            if (refreshed) {
-              console.log('✅ [YT] Token refreshed, retrying...');
-              // Retry with new token
-              const retryUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${settings.youtubeChannelId}&access_token=${refreshed}`;
-              const retryResponse = await fetch(retryUrl);
-              const retryData = await retryResponse.json();
-              
-              console.log('📊 [YT] Retry response:', retryData);
-              
-              if (!retryData.error && retryData.items && retryData.items[0]) {
-                const stats = retryData.items[0].statistics;
-                analytics.youtube.subscribers = parseInt(stats.subscriberCount) || 0;
-                analytics.youtube.reach = parseInt(stats.viewCount) || 0;
-                console.log(`✅ [YT] Got ${analytics.youtube.subscribers} subscribers, ${analytics.youtube.reach} total views`);
-              }
-            } else {
-              console.log('❌ [YT] Token refresh failed');
-            }
-          }
-        } else if (channelData.items && channelData.items[0]) {
-          const stats = channelData.items[0].statistics;
-          analytics.youtube.subscribers = parseInt(stats.subscriberCount) || 0;
-          analytics.youtube.reach = parseInt(stats.viewCount) || 0;
-          console.log(`✅ [YT] Got ${analytics.youtube.subscribers} subscribers, ${analytics.youtube.reach} total views`);
+        if (youtubeData.error) {
+          console.error('❌ [YT ANALYTICS] Service Error:', youtubeData.error);
+          analytics.youtube.subscribers = `Error: ${youtubeData.error}`;
         } else {
-          console.log('⚠️ [YT] No channel data found');
+          // Map the data from our YouTube analytics service
+          analytics.youtube.subscribers = youtubeData.subscriberCount || 0;
+          analytics.youtube.reach = youtubeData.views || 0;
+          analytics.youtube.videos = youtubeData.videoCount || 0;
+          analytics.youtube.engagement = youtubeData.engagement || 0;
+          analytics.youtube.channelTitle = youtubeData.channelTitle || 'Unknown';
+          analytics.youtube.estimatedMinutesWatched = youtubeData.estimatedMinutesWatched || 0;
+          analytics.youtube.isPosting = youtubeData.isPosting || false;
+          analytics.youtube.lastUpdated = youtubeData.lastUpdated;
+          
+          console.log(`✅ [YT] Got ${analytics.youtube.subscribers} subscribers, ${analytics.youtube.reach.toLocaleString()} total views for ${analytics.youtube.channelTitle}`);
         }
       } catch (ytError) {
         console.error('❌ [YT ANALYTICS] Fetch error:', ytError.message);
         analytics.youtube.subscribers = `Error: ${ytError.message}`;
       }
     } else {
-      console.log('⚠️ [YT] Missing credentials - youtubeAccessToken:', !!settings.youtubeAccessToken, 'youtubeChannelId:', !!settings.youtubeChannelId);
+      console.log('⚠️ [YT] Missing YouTube access token');
+      console.log(`📋 [YT] Have accessToken: ${!!settings.youtubeAccessToken}, refreshToken: ${!!settings.youtubeRefreshToken}, clientId: ${!!settings.youtubeClientId}, clientSecret: ${!!settings.youtubeClientSecret}`);
     }
 
     // Get upcoming posts from autopilot queue
@@ -257,49 +234,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * Refresh YouTube access token using refresh token
- */
-async function refreshYouTubeToken(settings: any): Promise<string | null> {
-  try {
-    if (!settings.youtubeRefreshToken || !settings.youtubeClientId || !settings.youtubeClientSecret) {
-      console.warn('⚠️ [YT REFRESH] Missing refresh credentials');
-      return null;
-    }
-
-    const refreshUrl = 'https://oauth2.googleapis.com/token';
-    const refreshResponse = await fetch(refreshUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: settings.youtubeClientId,
-        client_secret: settings.youtubeClientSecret,
-        refresh_token: settings.youtubeRefreshToken,
-        grant_type: 'refresh_token'
-      })
-    });
-
-    const refreshData = await refreshResponse.json();
-    
-    if (refreshData.error) {
-      console.error('❌ [YT REFRESH] Error:', refreshData.error_description);
-      return null;
-    }
-
-    if (refreshData.access_token) {
-      // Update settings with new access token
-      settings.youtubeAccessToken = refreshData.access_token;
-      await settings.save();
-      console.log('✅ [YT REFRESH] Access token refreshed successfully');
-      return refreshData.access_token;
-    }
-
-    return null;
-  } catch (error) {
-    console.error('❌ [YT REFRESH] Failed to refresh token:', error);
-    return null;
-  }
-}
+// YouTube token refresh is now handled by the youtubeAnalytics service
 
 /**
  * GET /api/analytics/debug - Debug endpoint to check credentials and API responses
