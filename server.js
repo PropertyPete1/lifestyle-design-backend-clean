@@ -335,6 +335,58 @@ app.get('/api/chart/status', async (req, res) => {
   }
 });
 
+// Scheduler status endpoint - compatible with frontend expectations
+app.get('/api/scheduler/status', async (req, res) => {
+  try {
+    console.log('📊 [SCHEDULER STATUS] Fetching queue status...');
+    
+    // Get all scheduled posts using our SchedulerQueueModel
+    const queuedPosts = await SchedulerQueueModel.find({
+      status: 'scheduled'
+    }).sort({ scheduledTime: 1 }).limit(10).exec();
+    
+    const totalQueued = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    const nextPost = queuedPosts.length > 0 ? queuedPosts[0] : null;
+    
+    const queuedVideos = queuedPosts.map(post => ({
+      id: post._id,
+      platform: post.platform || 'instagram',
+      scheduledFor: post.scheduledTime,
+      caption: post.caption ? 
+        (post.caption.length > 50 ? post.caption.substring(0, 47) + '...' : post.caption) : 
+        'No caption...',
+      engagement: post.engagement || 0,
+      source: post.source || 'autopilot'
+    }));
+    
+    const responseData = {
+      queueCount: totalQueued,
+      nextPost: nextPost ? {
+        platform: nextPost.platform,
+        scheduledTime: nextPost.scheduledTime,
+        caption: nextPost.caption.length > 100 ? nextPost.caption.substring(0, 97) + '...' : nextPost.caption
+      } : null,
+      isActive: totalQueued > 0,
+      posts: queuedVideos,
+      recentlyPosted: []
+    };
+    
+    console.log('📊 [SCHEDULER STATUS] Status retrieved:', { totalQueued, nextPost: !!nextPost });
+    res.status(200).json(responseData);
+    
+  } catch (err) {
+    console.error('❌ [SCHEDULER STATUS ERROR]', err);
+    res.status(500).json({ 
+      error: 'Failed to get scheduler status',
+      queueCount: 0,
+      nextPost: null,
+      isActive: false,
+      posts: [],
+      recentlyPosted: []
+    });
+  }
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
