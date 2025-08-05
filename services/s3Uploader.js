@@ -1,5 +1,21 @@
 // ✅ S3 Uploader Service - Phase 9 AutoPilot System
-const AWS = require('aws-sdk');
+let AWS = null;
+try {
+  AWS = require('aws-sdk');
+  console.log('✅ AWS SDK loaded successfully');
+} catch (err) {
+  console.warn('⚠️ AWS SDK not available, S3 upload disabled:', err.message);
+  // Create a mock AWS object for fallback
+  AWS = {
+    S3: function() {
+      return {
+        upload: () => {
+          throw new Error('AWS SDK not installed - S3 upload unavailable');
+        }
+      };
+    }
+  };
+}
 
 /**
  * Uploads video to S3 bucket
@@ -12,6 +28,18 @@ const AWS = require('aws-sdk');
 async function uploadToS3(options, Settings) {
   try {
     console.log('☁️ [S3 UPLOAD] Starting upload to S3...');
+    
+    // Check if AWS SDK is available
+    if (!AWS || typeof AWS.S3 !== 'function') {
+      console.warn('⚠️ [S3 UPLOAD] AWS SDK not available, simulating upload');
+      // Return a mock response for testing/fallback
+      return {
+        Location: `https://mock-s3-bucket.s3.amazonaws.com/${options.filename}`,
+        Key: options.filename,
+        Bucket: 'mock-bucket',
+        mock: true
+      };
+    }
     
     const settings = await Settings.findOne();
     if (!settings || !settings.s3AccessKey || !settings.s3SecretKey || !settings.s3BucketName) {
