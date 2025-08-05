@@ -106,11 +106,11 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       trendingAudio = await findTrendingAudio('instagram');
     }
     
-    // STEP 10: Calculate smart posting time (staggered for multiple videos)
+    // STEP 10: Calculate smart posting time (spread throughout today)
     console.log('📅 [AUTOPILOT] Step 10: Calculating optimal posting time...');
     const existingPosts = await SchedulerQueueModel.find({ status: 'scheduled' });
     const baseTime = await getNextAvailableSlot('instagram', existingPosts);
-    const scheduledTime = new Date(baseTime.getTime() + (i * 4 * 60 * 60 * 1000)); // 4 hours apart
+    const scheduledTime = new Date(baseTime.getTime() + (i * 2 * 60 * 60 * 1000)); // 2 hours apart for more posts today
     
     // STEP 11: Queue for posting (based on platform settings)
     console.log('📋 [AUTOPILOT] Step 11: Queueing posts...');

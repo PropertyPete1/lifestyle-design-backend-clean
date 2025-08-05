@@ -14,8 +14,7 @@ async function getSmartSchedulerTime(platform, settings) {
     console.log(`📅 [SMART SCHEDULER] Getting optimal time for ${platform}`);
     
     const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const today = new Date(now);
     
     let optimalHour, optimalMinute;
     
@@ -47,11 +46,16 @@ async function getSmartSchedulerTime(platform, settings) {
       return getRandomFallbackTime();
     }
     
-    // Set the optimal time for tomorrow
-    tomorrow.setHours(optimalHour, optimalMinute, 0, 0);
+    // Set the optimal time for TODAY
+    today.setHours(optimalHour, optimalMinute, 0, 0);
     
-    console.log(`✅ [SMART SCHEDULER] Optimal time: ${tomorrow.toLocaleString()}`);
-    return tomorrow;
+    // If the time has already passed today, schedule for tomorrow
+    if (today.getTime() <= now.getTime()) {
+      today.setDate(today.getDate() + 1);
+    }
+    
+    console.log(`✅ [SMART SCHEDULER] Optimal time: ${today.toLocaleString()}`);
+    return today;
     
   } catch (error) {
     console.error('❌ [SMART SCHEDULER ERROR]', error);
@@ -67,17 +71,21 @@ function getRandomFallbackTime() {
   console.log('⏰ [FALLBACK SCHEDULER] Using random time window');
   
   const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const scheduledTime = new Date(now);
   
   // Random hour between 5 PM (17) and 10 PM (22)
   const hour = Math.floor(Math.random() * (22 - 17 + 1)) + 17;
   const minute = Math.floor(Math.random() * 60);
   
-  tomorrow.setHours(hour, minute, 0, 0);
+  scheduledTime.setHours(hour, minute, 0, 0);
   
-  console.log(`⏰ [FALLBACK SCHEDULER] Random time: ${tomorrow.toLocaleString()}`);
-  return tomorrow;
+  // If the time has already passed today, schedule for tomorrow
+  if (scheduledTime.getTime() <= now.getTime()) {
+    scheduledTime.setDate(scheduledTime.getDate() + 1);
+  }
+  
+  console.log(`⏰ [FALLBACK SCHEDULER] Random time: ${scheduledTime.toLocaleString()}`);
+  return scheduledTime;
 }
 
 /**

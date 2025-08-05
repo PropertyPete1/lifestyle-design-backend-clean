@@ -158,6 +158,22 @@ app.post('/api/autopilot/run', async (req, res) => {
   }
 });
 
+// Mark post as posted (manual testing endpoint)
+app.post('/api/scheduler/mark-posted/:postId', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { markAsPostedAndRefill } = require('./phases/autopilot');
+    
+    console.log(`📝 [MANUAL POST] Marking post as posted: ${postId}`);
+    await markAsPostedAndRefill('instagram', postId, SchedulerQueueModel, SettingsModel);
+    
+    res.json({ success: true, message: 'Post marked as posted and refill triggered' });
+  } catch (error) {
+    console.error('❌ [MARK POSTED ERROR]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 console.log('✅ AutoPilot routes registered directly in server.js');
 
 // Queue management endpoints
