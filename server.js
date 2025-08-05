@@ -105,39 +105,7 @@ app.get('/api/autopilot/status', async (req, res) => {
   }
 });
 
-app.get('/api/autopilot/queue', async (req, res) => {
-  try {
-    const mockQueue = [
-      {
-        id: 1,
-        platform: 'instagram',
-        videoUrl: 'https://example.com/video1.mp4',
-        caption: 'Amazing real estate opportunity!',
-        scheduledTime: new Date(Date.now() + 3600000),
-        status: 'scheduled',
-        engagement: 15000
-      },
-      {
-        id: 2,
-        platform: 'youtube', 
-        videoUrl: 'https://example.com/video2.mp4',
-        caption: 'Check out this stunning property!',
-        scheduledTime: new Date(Date.now() + 7200000),
-        status: 'scheduled',
-        engagement: 25000
-      }
-    ];
-    
-    res.json({
-      queue: mockQueue,
-      totalCount: mockQueue.length,
-      platforms: ['instagram', 'youtube']
-    });
-  } catch (error) {
-    console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
-    res.status(500).json({ error: 'Failed to get AutoPilot queue' });
-  }
-});
+
 
 app.post('/api/autopilot/run', async (req, res) => {
   try {

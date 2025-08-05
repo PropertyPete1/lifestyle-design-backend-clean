@@ -76,9 +76,15 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'All videos already posted or similar' };
     }
     
-    // STEP 5: Select top video
-    const selectedVideo = uniqueVideos[0]; // Highest engagement unique video
-    console.log(`🎯 [AUTOPILOT] Step 5: Selected video with ${selectedVideo.engagement} engagement`);
+      // STEP 5: Select multiple videos based on maxPosts setting
+  const videosToProcess = Math.min(uniqueVideos.length, settings.maxPosts || 3);
+  console.log(`🎯 [AUTOPILOT] Step 5: Processing ${videosToProcess} videos`);
+  
+  const allQueuedPosts = [];
+  
+  for (let i = 0; i < videosToProcess; i++) {
+    const selectedVideo = uniqueVideos[i];
+    console.log(`🎯 [AUTOPILOT] Processing video ${i + 1}/${videosToProcess} with ${selectedVideo.engagement} engagement`);
     
     // STEP 6: Download video
     console.log('⬇️ [AUTOPILOT] Step 6: Downloading video...');
@@ -100,10 +106,11 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       trendingAudio = await findTrendingAudio('instagram');
     }
     
-    // STEP 10: Calculate smart posting time
+    // STEP 10: Calculate smart posting time (staggered for multiple videos)
     console.log('📅 [AUTOPILOT] Step 10: Calculating optimal posting time...');
     const existingPosts = await SchedulerQueueModel.find({ status: 'scheduled' });
-    const scheduledTime = await getNextAvailableSlot('instagram', existingPosts);
+    const baseTime = await getNextAvailableSlot('instagram', existingPosts);
+    const scheduledTime = new Date(baseTime.getTime() + (i * 4 * 60 * 60 * 1000)); // 4 hours apart
     
     // STEP 11: Queue for posting (based on platform settings)
     console.log('📋 [AUTOPILOT] Step 11: Queueing posts...');
@@ -147,17 +154,18 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       queuedPosts.push(youtubePost);
     }
     
-    console.log(`✅ [AUTOPILOT] Success! Queued ${queuedPosts.length} posts`);
-    
-    return {
-      success: true,
-      message: `Queued ${queuedPosts.length} posts`,
-      selectedVideo: {
-        id: selectedVideo.id,
-        engagement: selectedVideo.engagement,
-        caption: selectedVideo.caption.substring(0, 100) + '...'
-      },
-      queuedPosts: queuedPosts.map(post => ({
+    // Add this video's posts to the overall collection
+    allQueuedPosts.push(...queuedPosts);
+    console.log(`✅ [AUTOPILOT] Video ${i + 1} processed! Queued ${queuedPosts.length} posts`);
+  }
+  
+  console.log(`🎉 [AUTOPILOT] ALL VIDEOS PROCESSED! Total queued: ${allQueuedPosts.length} posts`);
+  
+  return {
+    success: true,
+    message: `Processed ${videosToProcess} videos, queued ${allQueuedPosts.length} posts`,
+    videosProcessed: videosToProcess,
+    queuedPosts: allQueuedPosts.map(post => ({
         platform: post.platform,
         scheduledTime: post.scheduledTime,
         status: post.status
