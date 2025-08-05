@@ -1,11 +1,11 @@
 {
-  "name": "lifestyle-design-backend-v2-ultimate",
+  "name": "lifestyle-design-backend-v2-clean",
   "version": "2.0.0",
   "description": "Backend v2 for Lifestyle Design Auto Poster",
-  "main": "server-ultimate.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node server-ultimate.js",
-    "build": "echo 'Build complete - JavaScript ready'",
+    "start": "node server.js",
+    "build": "echo 'Clean build complete'",
     "dev": "ts-node server.ts",
     "postinstall": "echo 'Dependencies installed'",
     "render-fast": "npm ci --only=production --silent --no-audit --no-fund || npm install --production --silent --no-audit --no-fund"
@@ -14,18 +14,18 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.515.0",
+    "aws-sdk": "^2.1691.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.18.2",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.2",
     "mongodb": "^5.7.0",
-    "mongoose": "^7.5.0",
+    "mongoose": "^7.8.7",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^2.7.0",
     "puppeteer": "^21.11.0",
-    "aws-sdk": "^2.1691.0",
-    "@aws-sdk/client-s3": "^3.515.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   },

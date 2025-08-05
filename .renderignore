@@ -4,11 +4,11 @@ models/
 routes/
 tsconfig.json
 *.ts
-server.js
 index.js
 app.js
 start.js
 server-simple.js
+server-ultimate.js
 render-*.sh
 .git/
 .env
