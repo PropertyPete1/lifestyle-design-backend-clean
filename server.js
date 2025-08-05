@@ -479,6 +479,53 @@ app.post('/api/test/validate-apis', async (req, res) => {
   }
 });
 
+// POST /api/autopost/run-now endpoint - Queue content for immediate posting
+app.post('/api/autopost/run-now', async (req, res) => {
+  try {
+    console.log('🔄 [RUN NOW TO QUEUE] Starting video queue process...');
+    
+    const { filename, caption, platform } = req.body;
+    
+    if (!filename) {
+      return res.status(400).json({ error: 'filename is required', success: false });
+    }
+    
+    // Smart scheduler - schedule 2 hours from now
+    const scheduledAt = new Date();
+    scheduledAt.setHours(scheduledAt.getHours() + 2);
+    console.log('📅 [SMART SCHEDULER] Optimal time calculated:', scheduledAt.toLocaleString());
+
+    // Create queue entry using SchedulerQueueModel
+    const queueEntry = new SchedulerQueueModel({
+      filename,
+      caption: caption || 'Amazing content!',
+      platform: platform || 'instagram',
+      scheduledTime: scheduledAt,
+      status: 'scheduled',
+      source: 'manual_run_now'
+    });
+    
+    const savedEntry = await queueEntry.save();
+    console.log('📦 [QUEUE INSERT] Entry added to scheduler queue:', savedEntry._id);
+    
+    res.json({
+      success: true,
+      message: 'Content queued for posting',
+      queueId: savedEntry._id,
+      scheduledTime: scheduledAt,
+      platform: platform || 'instagram'
+    });
+    
+  } catch (error) {
+    console.error('❌ [RUN NOW ERROR]', error);
+    res.status(500).json({ 
+      error: 'Failed to queue content',
+      success: false,
+      message: error.message 
+    });
+  }
+});
+
 // Additional test endpoints for settings page
 app.post('/api/test/mongodb', async (req, res) => {
   try {
