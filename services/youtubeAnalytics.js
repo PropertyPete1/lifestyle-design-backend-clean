@@ -6,6 +6,55 @@
 // Settings model is embedded in server.js - we'll get it via parameter
 
 /**
+ * Refresh YouTube access token using refresh token
+ */
+async function refreshYouTubeToken(settings) {
+  try {
+    console.log('🔄 [YOUTUBE TOKEN] Refreshing access token...');
+    
+    if (!settings.youtubeRefreshToken || !settings.youtubeClientId || !settings.youtubeClientSecret) {
+      throw new Error('Missing refresh token or client credentials');
+    }
+
+    const tokenUrl = 'https://oauth2.googleapis.com/token';
+    const params = new URLSearchParams({
+      client_id: settings.youtubeClientId,
+      client_secret: settings.youtubeClientSecret,
+      refresh_token: settings.youtubeRefreshToken,
+      grant_type: 'refresh_token'
+    });
+
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: params
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Token refresh failed: ${response.status} - ${errorText}`);
+    }
+
+    const tokenData = await response.json();
+    
+    // Update the access token in MongoDB
+    await settings.constructor.updateOne(
+      { _id: settings._id },
+      { youtubeAccessToken: tokenData.access_token }
+    );
+
+    console.log('✅ [YOUTUBE TOKEN] Access token refreshed successfully');
+    return tokenData.access_token;
+
+  } catch (error) {
+    console.error('❌ [YOUTUBE TOKEN] Refresh failed:', error.message);
+    throw error;
+  }
+}
+
+/**
  * Get YouTube channel analytics using YouTube Data API v3
  */
 async function getYouTubeAnalytics(Settings) {
@@ -14,8 +63,9 @@ async function getYouTubeAnalytics(Settings) {
     
     // Get YouTube credentials from MongoDB settings
     const settings = await Settings.findOne({});
-    if (!settings || !settings.youtubeClientId || !settings.youtubeAccessToken) {
+    if (!settings || !settings.youtubeClientId || !settings.youtubeClientSecret || !settings.youtubeAccessToken) {
       console.log('⚠️ [YOUTUBE ANALYTICS] Missing credentials in settings');
+      console.log(`📋 [YOUTUBE ANALYTICS] Have clientId: ${!!settings?.youtubeClientId}, clientSecret: ${!!settings?.youtubeClientSecret}, accessToken: ${!!settings?.youtubeAccessToken}, refreshToken: ${!!settings?.youtubeRefreshToken}`);
       return {
         subscribers: 0,
         views: 0,
@@ -27,12 +77,29 @@ async function getYouTubeAnalytics(Settings) {
       };
     }
 
+    let accessToken = settings.youtubeAccessToken;
+
     // Get channel statistics
-    const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true&access_token=${settings.youtubeAccessToken}`;
+    const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true&access_token=${accessToken}`;
     
-    console.log('🔗 [YOUTUBE ANALYTICS] Calling API:', channelUrl.replace(settings.youtubeAccessToken, 'TOKEN_HIDDEN'));
+    console.log('🔗 [YOUTUBE ANALYTICS] Calling API:', channelUrl.replace(accessToken, 'TOKEN_HIDDEN'));
     
-    const channelResponse = await fetch(channelUrl);
+    let channelResponse = await fetch(channelUrl);
+    
+    // If token expired (401), try to refresh it
+    if (channelResponse.status === 401) {
+      console.log('🔄 [YOUTUBE ANALYTICS] Access token expired, attempting refresh...');
+      try {
+        accessToken = await refreshYouTubeToken(settings);
+        // Retry with new token
+        const newChannelUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true&access_token=${accessToken}`;
+        channelResponse = await fetch(newChannelUrl);
+      } catch (refreshError) {
+        console.error('❌ [YOUTUBE ANALYTICS] Token refresh failed:', refreshError.message);
+        throw new Error(`YouTube API authentication failed: ${refreshError.message}`);
+      }
+    }
+    
     if (!channelResponse.ok) {
       const errorText = await channelResponse.text();
       console.error('❌ [YOUTUBE ANALYTICS] API Error:', channelResponse.status, errorText);

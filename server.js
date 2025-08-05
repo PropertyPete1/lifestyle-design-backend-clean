@@ -191,8 +191,10 @@ app.get('/api/analytics', async (req, res) => {
       credentials: {
         instagramAccessToken: settings.instagramToken ? '✅ Configured' : '❌ Missing',
         igBusinessAccountId: settings.igBusinessId ? '✅ Configured' : '❌ Missing',
-        youtubeToken: settings.youtubeAccessToken ? '✅ Configured' : '❌ Missing',
+        youtubeAccessToken: settings.youtubeAccessToken ? '✅ Configured' : '❌ Missing',
         youtubeRefreshToken: settings.youtubeRefreshToken ? '✅ Configured' : '❌ Missing',
+        youtubeClientId: settings.youtubeClientId ? '✅ Configured' : '❌ Missing',
+        youtubeClientSecret: settings.youtubeClientSecret ? '✅ Configured' : '❌ Missing',
         s3Bucket: settings.s3BucketName ? '✅ Configured' : '❌ Missing',
         mongoUri: settings.mongoURI ? '✅ Configured' : '❌ Missing'
       }
@@ -217,8 +219,9 @@ app.get('/api/analytics', async (req, res) => {
     }
 
     // Get real YouTube analytics if configured
-    if (settings.youtubeAccessToken && settings.youtubeChannelId) {
+    if (settings.youtubeAccessToken && settings.youtubeClientId && settings.youtubeClientSecret) {
       console.log('📺 [ANALYTICS] Fetching real YouTube data...');
+      console.log(`📋 [ANALYTICS] YouTube credentials available: accessToken=${!!settings.youtubeAccessToken}, refreshToken=${!!settings.youtubeRefreshToken}, clientId=${!!settings.youtubeClientId}, clientSecret=${!!settings.youtubeClientSecret}`);
       try {
         const ytData = await getYouTubeAnalytics(Settings);
         if (ytData && !ytData.error) {
@@ -231,6 +234,8 @@ app.get('/api/analytics', async (req, res) => {
       } catch (ytError) {
         console.error('❌ [YT ANALYTICS] Error:', ytError.message);
       }
+    } else {
+      console.log('⚠️ [ANALYTICS] YouTube credentials incomplete - skipping YouTube analytics');
     }
 
     // Get upcoming posts from autopilot queue
