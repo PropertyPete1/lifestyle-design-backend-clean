@@ -65,11 +65,13 @@ async function refreshYouTubeToken(settings) {
  * Get YouTube channel analytics using YouTube Data API v3
  */
 async function getYouTubeAnalytics(Settings) {
+  // Get YouTube credentials from MongoDB settings (outside try block for error handling access)
+  let settings;
+  
   try {
     console.log('🎬 [YOUTUBE ANALYTICS] Fetching channel data...');
     
-    // Get YouTube credentials from MongoDB settings
-    const settings = await Settings.findOne({});
+    settings = await Settings.findOne({});
     if (!settings || !settings.youtubeClientId || !settings.youtubeClientSecret || !settings.youtubeAccessToken) {
       console.log('⚠️ [YOUTUBE ANALYTICS] Missing credentials in settings');
       console.log(`📋 [YOUTUBE ANALYTICS] Have clientId: ${!!settings?.youtubeClientId}, clientSecret: ${!!settings?.youtubeClientSecret}, accessToken: ${!!settings?.youtubeAccessToken}, refreshToken: ${!!settings?.youtubeRefreshToken}`);
@@ -174,7 +176,9 @@ async function getYouTubeAnalytics(Settings) {
     
     // Fallback: Direct YouTube scraping using channel ID from settings
     try {
-      const fallbackData = await scrapeYouTubeDirect(settings);
+      // If settings failed to load, create a minimal settings object with defaults
+      const fallbackSettings = settings || { youtubeChannelId: 'UCqSfOt2aLrKKiROnY4kGBcQ' };
+      const fallbackData = await scrapeYouTubeDirect(fallbackSettings);
       console.log('✅ [YOUTUBE FALLBACK] Direct scraping successful:', fallbackData);
       
       // Cache the scraped data for future API failures

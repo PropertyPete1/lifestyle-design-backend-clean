@@ -16,11 +16,13 @@ let instagramCache = {
  * Get Instagram account analytics using Graph API
  */
 async function getInstagramAnalytics(Settings) {
+  // Get Instagram credentials from MongoDB settings (outside try block for error handling access)
+  let settings;
+  
   try {
     console.log('📱 [INSTAGRAM ANALYTICS] Fetching account data...');
     
-    // Get Instagram credentials from MongoDB settings
-    const settings = await Settings.findOne({});
+    settings = await Settings.findOne({});
     if (!settings || !settings.instagramToken || !settings.igBusinessId) {
       console.log('⚠️ [INSTAGRAM ANALYTICS] Missing credentials in settings');
       return {
@@ -109,7 +111,9 @@ async function getInstagramAnalytics(Settings) {
     
     // Fallback: Direct Instagram scraping
     try {
-      const fallbackData = await scrapeInstagramDirect(settings);
+      // If settings failed to load, create a minimal settings object with defaults
+      const fallbackSettings = settings || { instagramUsername: 'lifestyledesignrealtytexas' };
+      const fallbackData = await scrapeInstagramDirect(fallbackSettings);
       console.log('✅ [INSTAGRAM FALLBACK] Direct scraping successful:', fallbackData);
       
       // Cache the scraped data for future API failures
