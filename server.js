@@ -306,9 +306,19 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Chart status endpoint for dashboard
+// Chart status endpoint for dashboard (with basic caching)
+let chartStatusCache = null;
+let chartStatusCacheTime = 0;
+const CHART_CACHE_DURATION = 5000; // 5 seconds cache
+
 app.get('/api/chart/status', async (req, res) => {
   try {
+    // Return cached data if still fresh (reduces MongoDB load)
+    const now = Date.now();
+    if (chartStatusCache && (now - chartStatusCacheTime) < CHART_CACHE_DURATION) {
+      return res.json(chartStatusCache);
+    }
+    
     const settings = await SettingsModel.findOne();
     let queueCount = 0;
     
@@ -319,13 +329,19 @@ app.get('/api/chart/status', async (req, res) => {
       queueCount = 0;
     }
     
-    res.json({
+    const responseData = {
       status: 'active',
       autopilotEnabled: settings?.autopilotEnabled || false,
       queueCount,
       lastUpdated: new Date().toISOString(),
       service: 'backend-v2'
-    });
+    };
+    
+    // Cache the response
+    chartStatusCache = responseData;
+    chartStatusCacheTime = now;
+    
+    res.json(responseData);
   } catch (error) {
     console.error('❌ [CHART] Error fetching chart status:', error);
     res.status(500).json({
@@ -340,12 +356,22 @@ app.get('/api/scheduler/status', async (req, res) => {
   try {
     console.log('📊 [SCHEDULER STATUS] Fetching queue status...');
     
-    // Get all scheduled posts using our SchedulerQueueModel
-    const queuedPosts = await SchedulerQueueModel.find({
-      status: 'scheduled'
-    }).sort({ scheduledTime: 1 }).limit(10).exec();
+    let queuedPosts = [];
+    let totalQueued = 0;
     
-    const totalQueued = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    try {
+      // Get all scheduled posts using our SchedulerQueueModel
+      queuedPosts = await SchedulerQueueModel.find({
+        status: 'scheduled'
+      }).sort({ scheduledTime: 1 }).limit(10).exec();
+      
+      totalQueued = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    } catch (dbError) {
+      console.log('⚠️ [SCHEDULER] Queue collection not found, using empty results');
+      queuedPosts = [];
+      totalQueued = 0;
+    }
+    
     const nextPost = queuedPosts.length > 0 ? queuedPosts[0] : null;
     
     const queuedVideos = queuedPosts.map(post => ({
@@ -364,7 +390,9 @@ app.get('/api/scheduler/status', async (req, res) => {
       nextPost: nextPost ? {
         platform: nextPost.platform,
         scheduledTime: nextPost.scheduledTime,
-        caption: nextPost.caption.length > 100 ? nextPost.caption.substring(0, 97) + '...' : nextPost.caption
+        caption: (nextPost.caption && nextPost.caption.length > 100) ? 
+          nextPost.caption.substring(0, 97) + '...' : 
+          (nextPost.caption || 'No caption available')
       } : null,
       isActive: totalQueued > 0,
       posts: queuedVideos,
