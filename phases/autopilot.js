@@ -168,9 +168,9 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     queuedPosts: allQueuedPosts.map(post => ({
         platform: post.platform,
         scheduledTime: post.scheduledTime,
-        status: post.status
-      })),
-      s3Url
+        status: post.status,
+        videoUrl: post.videoUrl
+      }))
     };
     
   } catch (error) {
