@@ -4,9 +4,9 @@
   "description": "Backend v2 for Lifestyle Design Auto Poster",
   "main": "server.js",
   "scripts": {
-    "start": "node dist/server.js",
-    "build": "tsc",
-    "dev": "ts-node server.ts",
+    "start": "node server.js",
+    "build": "echo 'No build step needed'",
+    "dev": "node server.js",
     "postinstall": "echo 'Dependencies installed'",
     "render-fast": "npm ci --only=production --silent --no-audit --no-fund || npm install --production --silent --no-audit --no-fund"
   },
