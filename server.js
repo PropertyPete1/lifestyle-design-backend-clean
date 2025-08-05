@@ -289,7 +289,7 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'backend-v2',
-    version: '2.0.1',
+    version: '2.0.2',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -299,7 +299,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'backend-v2',
-    version: '2.0.1',
+    version: '2.0.2',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     autopilotRoutes: 'enabled'
