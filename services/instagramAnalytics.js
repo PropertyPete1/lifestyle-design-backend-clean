@@ -5,6 +5,13 @@
 
 // Settings model is embedded in server.js - we'll get it via parameter
 
+// Smart caching - only used when API fails
+let instagramCache = {
+  data: null,
+  timestamp: null,
+  duration: 2 * 60 * 60 * 1000 // 2 hours cache when API fails
+};
+
 /**
  * Get Instagram account analytics using Graph API
  */
@@ -90,15 +97,36 @@ async function getInstagramAnalytics(Settings) {
 
   } catch (error) {
     console.error('❌ [INSTAGRAM ANALYTICS ERROR]', error);
+    
+    // Check if we have recent cached data (only when API fails)
+    if (instagramCache.data && instagramCache.timestamp && 
+        Date.now() - instagramCache.timestamp < instagramCache.duration) {
+      console.log('📦 [INSTAGRAM CACHE] Using cached data (API failed)');
+      return { ...instagramCache.data, source: 'cached_fallback' };
+    }
+    
     console.log('🔄 [INSTAGRAM FALLBACK] Attempting direct Instagram scraping...');
     
     // Fallback: Direct Instagram scraping
     try {
       const fallbackData = await scrapeInstagramDirect(settings);
       console.log('✅ [INSTAGRAM FALLBACK] Direct scraping successful:', fallbackData);
+      
+      // Cache the scraped data for future API failures
+      instagramCache.data = fallbackData;
+      instagramCache.timestamp = Date.now();
+      console.log('💾 [INSTAGRAM CACHE] Cached scraped data for 2 hours');
+      
       return fallbackData;
     } catch (fallbackError) {
       console.error('❌ [INSTAGRAM FALLBACK ERROR]', fallbackError);
+      
+      // Last resort: return cached data even if old
+      if (instagramCache.data) {
+        console.log('🆘 [INSTAGRAM CACHE] Using old cached data as last resort');
+        return { ...instagramCache.data, source: 'old_cache_emergency' };
+      }
+      
       return {
         followers: 0,
         following: 0,

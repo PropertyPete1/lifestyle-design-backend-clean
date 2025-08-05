@@ -5,6 +5,13 @@
 
 // Settings model is embedded in server.js - we'll get it via parameter
 
+// Smart caching - only used when API fails
+let youtubeCache = {
+  data: null,
+  timestamp: null,
+  duration: 2 * 60 * 60 * 1000 // 2 hours cache when API fails
+};
+
 /**
  * Refresh YouTube access token using refresh token
  */
@@ -155,15 +162,36 @@ async function getYouTubeAnalytics(Settings) {
 
   } catch (error) {
     console.error('❌ [YOUTUBE ANALYTICS ERROR]', error);
+    
+    // Check if we have recent cached data (only when API fails)
+    if (youtubeCache.data && youtubeCache.timestamp && 
+        Date.now() - youtubeCache.timestamp < youtubeCache.duration) {
+      console.log('📦 [YOUTUBE CACHE] Using cached data (API failed)');
+      return { ...youtubeCache.data, source: 'cached_fallback' };
+    }
+    
     console.log('🔄 [YOUTUBE FALLBACK] Attempting direct YouTube scraping...');
     
     // Fallback: Direct YouTube scraping using channel ID from settings
     try {
       const fallbackData = await scrapeYouTubeDirect(settings);
       console.log('✅ [YOUTUBE FALLBACK] Direct scraping successful:', fallbackData);
+      
+      // Cache the scraped data for future API failures
+      youtubeCache.data = fallbackData;
+      youtubeCache.timestamp = Date.now();
+      console.log('💾 [YOUTUBE CACHE] Cached scraped data for 2 hours');
+      
       return fallbackData;
     } catch (fallbackError) {
       console.error('❌ [YOUTUBE FALLBACK ERROR]', fallbackError);
+      
+      // Last resort: return cached data even if old
+      if (youtubeCache.data) {
+        console.log('🆘 [YOUTUBE CACHE] Using old cached data as last resort');
+        return { ...youtubeCache.data, source: 'old_cache_emergency' };
+      }
+      
       return {
         subscribers: 0,
         views: 0,
