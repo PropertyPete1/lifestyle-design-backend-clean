@@ -287,6 +287,32 @@ try {
   youtubeAnalytics = null;
 }
 
+// Chart status endpoint for dashboard widgets
+app.get('/api/chart/status', async (req, res) => {
+  try {
+    const queueCount = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    const postedCount = await SchedulerQueueModel.countDocuments({ status: 'posted' });
+    const failedCount = await SchedulerQueueModel.countDocuments({ status: 'failed' });
+    
+    res.json({
+      status: 'active',
+      queueCount,
+      postedToday: postedCount,
+      failedPosts: failedCount,
+      chartData: {
+        labels: ['Scheduled', 'Posted', 'Failed'],
+        datasets: [{
+          data: [queueCount, postedCount, failedCount],
+          backgroundColor: ['#3B82F6', '#10B981', '#EF4444']
+        }]
+      }
+    });
+  } catch (error) {
+    console.error('❌ Chart status error:', error);
+    res.status(500).json({ error: 'Failed to fetch chart status' });
+  }
+});
+
 // Unified dashboard analytics endpoint
 app.get('/api/analytics', async (req, res) => {
   try {
