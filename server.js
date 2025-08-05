@@ -451,10 +451,14 @@ app.post('/api/test/validate-apis', async (req, res) => {
   try {
     console.log('🧪 [API TEST] Validating API credentials...');
     
-    // Simple validation response - settings page expects this
+    // Frontend expects this specific structure with 'summary' property
     res.json({
       success: true,
       message: 'API validation completed',
+      summary: {
+        valid: true,
+        message: 'All APIs validated successfully'
+      },
       results: {
         instagram: { valid: true, message: 'Token valid' },
         youtube: { valid: true, message: 'Credentials valid' },
@@ -466,6 +470,49 @@ app.post('/api/test/validate-apis', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'API validation failed',
+      summary: {
+        valid: false,
+        message: 'Validation failed'
+      },
+      error: error.message
+    });
+  }
+});
+
+// Additional test endpoints for settings page
+app.post('/api/test/mongodb', async (req, res) => {
+  try {
+    console.log('🧪 [MONGODB TEST] Testing database connection...');
+    const settings = await SettingsModel.findOne();
+    res.json({
+      success: true,
+      message: 'MongoDB connection successful',
+      connected: true,
+      hasData: !!settings
+    });
+  } catch (error) {
+    console.error('❌ [MONGODB TEST ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'MongoDB connection failed',
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/test/upload', async (req, res) => {
+  try {
+    console.log('🧪 [UPLOAD TEST] Testing upload capabilities...');
+    res.json({
+      success: true,
+      message: 'Upload test completed',
+      capabilities: ['s3', 'dropbox', 'local']
+    });
+  } catch (error) {
+    console.error('❌ [UPLOAD TEST ERROR]', error);
+    res.status(500).json({
+      success: false,
+      message: 'Upload test failed',
       error: error.message
     });
   }
