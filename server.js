@@ -31,13 +31,46 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ✅ SETTINGS ROUTES FOR FRONTEND SAVE/LOAD
-const Settings = require('./src/models/settings.js');
-const settingsRoute = require('./src/routes/settingsRoute.js');
+// ✅ SETTINGS MODEL - COMPLETE SCHEMA FOR FRONTEND
+const settingsSchema = new mongoose.Schema({
+  // Instagram API
+  instagramToken: String,
+  igBusinessId: String,
+  
+  // YouTube API
+  youtubeClientId: String,
+  youtubeClientSecret: String,
+  youtubeAccessToken: String,
+  youtubeRefreshToken: String,
+  
+  // AWS S3
+  s3AccessKey: String,
+  s3SecretKey: String,
+  s3BucketName: String,
+  
+  // Database
+  mongoURI: String,
+  
+  // AI Services
+  openaiApiKey: String,
+  
+  // Cloud Storage
+  dropboxToken: String,
+  
+  // Video Generation
+  runwayApiKey: String,
+  
+  // AutoPilot Settings
+  maxPosts: { type: Number, default: 4 },
+  autopilotEnabled: { type: Boolean, default: false },
+  cartoonMode: { type: Boolean, default: false },
+  schedulerType: { type: String, default: 'daily' },
+}, { 
+  timestamps: true,
+  collection: 'SettingsClean' // Clean collection name
+});
 
-// ✅ CRITICAL LINE - REGISTER SETTINGS ROUTER
-app.use('/api/settings', settingsRoute);
-console.log('✅ Settings router registered at /api/settings in server.js');
+const Settings = mongoose.model('Settings', settingsSchema);
 
 app.get('/api/settings', async (req, res) => {
   try {
