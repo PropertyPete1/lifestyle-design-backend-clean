@@ -310,7 +310,14 @@ app.get('/api/health', (req, res) => {
 app.get('/api/chart/status', async (req, res) => {
   try {
     const settings = await SettingsModel.findOne();
-    const queueCount = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    let queueCount = 0;
+    
+    try {
+      queueCount = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    } catch (queueError) {
+      console.log('⚠️ [CHART] Queue collection not found, using 0');
+      queueCount = 0;
+    }
     
     res.json({
       status: 'active',
