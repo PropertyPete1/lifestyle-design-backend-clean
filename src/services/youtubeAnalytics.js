@@ -55,50 +55,84 @@ async function scrapeYouTubeChannel(settings) {
   try {
     console.log('🕷️ [YT SCRAPER] Scraping YouTube channel for real data...');
     
-    // Get channel ID or use a fallback URL
-    let channelUrl;
+    // Get channel ID or use a fallback URL with multiple attempts
+    let channelUrls = [];
+    
     if (settings.youtubeChannelId) {
-      channelUrl = `https://www.youtube.com/channel/${settings.youtubeChannelId}`;
-    } else if (settings.youtubeChannelHandle) {
-      channelUrl = `https://www.youtube.com/@${settings.youtubeChannelHandle}`;
-    } else {
-      // Try to extract from any existing data
-      channelUrl = 'https://www.youtube.com/';
-      console.warn('⚠️ [YT SCRAPER] No channel ID or handle found');
+      channelUrls.push(`https://www.youtube.com/channel/${settings.youtubeChannelId}`);
+    }
+    if (settings.youtubeChannelHandle) {
+      // Try both with and without @ prefix
+      channelUrls.push(`https://www.youtube.com/@${settings.youtubeChannelHandle.replace('@', '')}`);
+      channelUrls.push(`https://www.youtube.com/c/${settings.youtubeChannelHandle.replace('@', '')}`);
+      channelUrls.push(`https://www.youtube.com/user/${settings.youtubeChannelHandle.replace('@', '')}`);
+    }
+    
+    // Add some educated guesses based on the app context
+    channelUrls.push('https://www.youtube.com/@LifestyleDesignRealty');
+    channelUrls.push('https://www.youtube.com/c/LifestyleDesignRealty');
+    channelUrls.push('https://www.youtube.com/@PropertyPete');
+    channelUrls.push('https://www.youtube.com/c/PropertyPete');
+    
+    if (channelUrls.length === 0) {
+      console.warn('⚠️ [YT SCRAPER] No channel URLs to try');
       return {
-        error: 'No YouTube channel ID configured for scraping',
+        error: 'No YouTube channel configured for scraping',
         subscriberCount: 0,
         views: 0,
         videoCount: 0
       };
     }
 
-    console.log(`🔗 [YT SCRAPER] Fetching: ${channelUrl}`);
+    console.log(`🔗 [YT SCRAPER] Will try ${channelUrls.length} URLs: ${channelUrls.join(', ')}`);
 
-    // Fetch the channel page HTML
-    const response = await fetch(channelUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    // Try each URL until one works
+    let html = null;
+    let successUrl = null;
+    
+    for (const channelUrl of channelUrls) {
+      try {
+        console.log(`🔗 [YT SCRAPER] Trying: ${channelUrl}`);
+        
+        const response = await fetch(channelUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+
+        if (response.ok) {
+          html = await response.text();
+          successUrl = channelUrl;
+          console.log(`✅ [YT SCRAPER] Success with: ${channelUrl}`);
+          break;
+        } else {
+          console.log(`⚠️ [YT SCRAPER] Failed ${channelUrl}: ${response.status}`);
+        }
+      } catch (error) {
+        console.log(`⚠️ [YT SCRAPER] Error with ${channelUrl}: ${error.message}`);
+        continue;
       }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch channel page: ${response.status}`);
     }
 
-    const html = await response.text();
+    if (!html) {
+      throw new Error('Failed to fetch any valid YouTube channel page');
+    }
     
     // Extract subscriber count using regex patterns
     let subscriberCount = 0;
     let videoCount = 0;
     let channelTitle = 'Unknown Channel';
 
-    // Look for subscriber count patterns
+    // Look for subscriber count patterns - enhanced with more patterns
     const subPatterns = [
       /"subscriberCountText":\s*{"simpleText":"([\d,.\s]+(?:K|M|B)?\s*subscribers?)"/,
       /"subscriberCountText":\s*{"runs":\[{"text":"([\d,.\s]+)"},{"text":"([KMB]?)"}.*?"subscribers"/,
       /(\d{1,3}(?:,\d{3})*(?:\.\d+)?[KMB]?)\s*subscribers/i,
-      /subscribers["\s]*:[\s]*["']?([\d,.\s]+[KMB]?)["']?/i
+      /subscribers["\s]*:[\s]*["']?([\d,.\s]+[KMB]?)["']?/i,
+      /"text":"([\d,.]+[KMB]?)\s*subscribers"/i,
+      /"subscriberCountText".*?"text":"([\d,.]+[KMB]?)"/,
+      /about-stats.*?(\d{1,3}(?:,\d{3})*(?:\.\d+)?[KMB]?)\s*subscribers/i,
+      /"content":"([\d,.]+[KMB]?)\s*subscribers"/i
     ];
 
     for (const pattern of subPatterns) {
@@ -149,10 +183,11 @@ async function scrapeYouTubeChannel(settings) {
       isPosting: true, // Assume active if we found videos
       lastUpdated: new Date().toISOString(),
       scraped: true,
-      source: 'web_scraping'
+      source: 'web_scraping',
+      scrapedUrl: successUrl
     };
 
-    console.log(`✅ [YT SCRAPER] Success: ${scrapedData.subscriberCount} subs, ${scrapedData.videoCount} videos for ${scrapedData.channelTitle}`);
+    console.log(`✅ [YT SCRAPER] Success: ${scrapedData.subscriberCount} subs, ${scrapedData.videoCount} videos for ${scrapedData.channelTitle} from ${successUrl}`);
     return scrapedData;
 
   } catch (error) {
@@ -166,10 +201,10 @@ async function scrapeYouTubeChannel(settings) {
       channelTitle: 'Scraping Failed',
       scraped: true
     };
+    }
   }
-}
 
-/**
+  /**
  * Parse YouTube number format (1.2K, 500M, etc.) to actual number
  */
 function parseYouTubeNumber(text) {

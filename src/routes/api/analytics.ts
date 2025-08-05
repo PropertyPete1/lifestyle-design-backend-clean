@@ -109,44 +109,45 @@ router.get('/', async (req, res) => {
       console.log('⚠️ [IG] Missing credentials - instagramToken:', !!settings.instagramToken, 'igBusinessId:', !!settings.igBusinessId);
     }
 
-    // Fetch YouTube analytics if configured  
-    if (settings.youtubeAccessToken) {
-      console.log('📺 [ANALYTICS] Fetching YouTube data using youtubeAnalytics service...');
-      console.log(`🔑 Using YT Token: ${settings.youtubeAccessToken ? 'Present' : 'Missing'}`);
-      console.log(`🔑 Using YT Refresh Token: ${settings.youtubeRefreshToken ? 'Present' : 'Missing'}`);
-      console.log(`🔑 Using YT Client ID: ${settings.youtubeClientId ? 'Present' : 'Missing'}`);
-      console.log(`🔑 Using YT Client Secret: ${settings.youtubeClientSecret ? 'Present' : 'Missing'}`);
-      
-      try {
-        // Use our YouTube analytics service with token refresh capability
-        const youtubeAnalytics = require('../../services/youtubeAnalytics');
-        const youtubeData = await youtubeAnalytics.getYouTubeAnalytics(settings);
+    // Fetch YouTube analytics - try API first, fallback to scraping
+    console.log('📺 [ANALYTICS] Fetching YouTube data using youtubeAnalytics service...');
+    console.log(`🔑 Using YT Token: ${settings.youtubeAccessToken ? 'Present' : 'Missing'}`);
+    console.log(`🔑 Using YT Channel ID: ${settings.youtubeChannelId ? 'Present' : 'Missing'}`);
+    console.log(`🔑 Using YT Channel Handle: ${settings.youtubeChannelHandle ? 'Present' : 'Missing'}`);
+    
+    try {
+      // Always use our YouTube analytics service - it handles both API and scraping
+      const youtubeAnalytics = require('../../services/youtubeAnalytics');
+      const youtubeData = await youtubeAnalytics.getYouTubeAnalytics(settings);
 
-        console.log('📊 [YT] Service response:', youtubeData);
+      console.log('📊 [YT] Service response:', youtubeData);
 
-        if (youtubeData.error) {
-          console.error('❌ [YT ANALYTICS] Service Error:', youtubeData.error);
-          analytics.youtube.subscribers = `Error: ${youtubeData.error}`;
-        } else {
-          // Map the data from our YouTube analytics service
-          analytics.youtube.subscribers = youtubeData.subscriberCount || 0;
-          analytics.youtube.reach = youtubeData.views || 0;
-          analytics.youtube.videos = youtubeData.videoCount || 0;
-          analytics.youtube.engagement = youtubeData.engagement || 0;
-          analytics.youtube.channelTitle = youtubeData.channelTitle || 'Unknown';
-          analytics.youtube.estimatedMinutesWatched = youtubeData.estimatedMinutesWatched || 0;
-          analytics.youtube.isPosting = youtubeData.isPosting || false;
-          analytics.youtube.lastUpdated = youtubeData.lastUpdated;
-          
-          console.log(`✅ [YT] Got ${analytics.youtube.subscribers} subscribers, ${analytics.youtube.reach.toLocaleString()} total views for ${analytics.youtube.channelTitle}`);
+      if (youtubeData.error && !youtubeData.scraped) {
+        console.error('❌ [YT ANALYTICS] Service Error:', youtubeData.error);
+        analytics.youtube.subscribers = `Error: ${youtubeData.error}`;
+      } else {
+        // Map the data from our YouTube analytics service
+        analytics.youtube.subscribers = youtubeData.subscriberCount || 0;
+        analytics.youtube.reach = youtubeData.views || 0;
+        analytics.youtube.videos = youtubeData.videoCount || 0;
+        analytics.youtube.engagement = youtubeData.engagement || 0;
+        analytics.youtube.channelTitle = youtubeData.channelTitle || 'Unknown';
+        analytics.youtube.estimatedMinutesWatched = youtubeData.estimatedMinutesWatched || 0;
+        analytics.youtube.isPosting = youtubeData.isPosting || false;
+        analytics.youtube.lastUpdated = youtubeData.lastUpdated;
+        analytics.youtube.source = youtubeData.source || 'unknown';
+        
+        // Add scraping indicator if data was scraped
+        if (youtubeData.scraped) {
+          analytics.youtube.scraped = true;
+          analytics.youtube.scrapeReason = youtubeData.error || 'API quota exceeded';
         }
-      } catch (ytError) {
-        console.error('❌ [YT ANALYTICS] Fetch error:', ytError.message);
-        analytics.youtube.subscribers = `Error: ${ytError.message}`;
+        
+        console.log(`✅ [YT] Got ${analytics.youtube.subscribers} subscribers, ${analytics.youtube.reach.toLocaleString()} total views for ${analytics.youtube.channelTitle}${youtubeData.scraped ? ' (scraped)' : ''}`);
       }
-    } else {
-      console.log('⚠️ [YT] Missing YouTube access token');
-      console.log(`📋 [YT] Have accessToken: ${!!settings.youtubeAccessToken}, refreshToken: ${!!settings.youtubeRefreshToken}, clientId: ${!!settings.youtubeClientId}, clientSecret: ${!!settings.youtubeClientSecret}`);
+    } catch (ytError) {
+      console.error('❌ [YT ANALYTICS] Service error:', ytError.message);
+      analytics.youtube.subscribers = `Error: ${ytError.message}`;
     }
 
     // Get upcoming posts from autopilot queue
