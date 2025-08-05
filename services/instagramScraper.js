@@ -1,58 +1,248 @@
-// ✅ Instagram Scraper Service - Phase 9 AutoPilot System
+// ✅ Instagram Visual Scraper Service - Phase 9 AutoPilot System
 const fetch = require('node-fetch');
+const puppeteer = require('puppeteer');
 
 /**
- * Scrapes latest Instagram videos using Graph API
+ * PHASE 9: Visual Instagram Scraper - Gets ACTUAL view counts
+ * Scrapes Instagram profile visually to get real view data (not just engagement)
  * @param {Object} Settings - Mongoose Settings model
  * @param {number} limit - Number of videos to fetch (default: 500)
- * @returns {Array} Array of video objects with engagement data
+ * @returns {Array} Array of video objects with REAL view counts
  */
 async function scrapeLatestInstagramVideos(Settings, limit = 500) {
+  let browser = null;
+  
   try {
-    console.log('🔄 [INSTAGRAM SCRAPER] Starting to scrape latest videos...');
+    console.log('🔄 [VISUAL SCRAPER] Starting visual Instagram scraping for view counts...');
     
     const settings = await Settings.findOne();
     if (!settings || !settings.instagramToken || !settings.igBusinessId) {
       throw new Error('Instagram credentials not found in settings');
     }
 
+    // Launch headless browser for visual scraping
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ]
+    });
+
+    const page = await browser.newPage();
+    
+    // Set realistic user agent and viewport
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    await page.setViewport({ width: 1366, height: 768 });
+
+    // Get Instagram username from business account ID
+    const instagramUsername = await getInstagramUsername(settings.instagramToken, settings.igBusinessId);
+    if (!instagramUsername) {
+      throw new Error('Could not get Instagram username from business account');
+    }
+
+    console.log(`📱 [VISUAL SCRAPER] Scraping profile: @${instagramUsername}`);
+    
+    // Navigate to Instagram profile
+    await page.goto(`https://www.instagram.com/${instagramUsername}/`, {
+      waitUntil: 'networkidle2',
+      timeout: 30000
+    });
+
+    // Wait for posts to load
+    await page.waitForSelector('article div div div div a', { timeout: 15000 });
+
+    // Scroll and collect video posts with view counts
+    const videos = [];
+    let scrollCount = 0;
+    const maxScrolls = Math.ceil(limit / 12); // ~12 posts per screen
+
+    while (videos.length < limit && scrollCount < maxScrolls) {
+      // Get all video posts currently visible
+      const newVideos = await page.evaluate(() => {
+        const posts = Array.from(document.querySelectorAll('article div div div div a'));
+        const videoData = [];
+
+        posts.forEach(post => {
+          try {
+            // Check if it's a video (has play icon or video indicator)
+            const hasVideoIcon = post.querySelector('svg[aria-label="Clip"]') || 
+                                post.querySelector('svg[aria-label="Video"]') ||
+                                post.querySelector('[aria-label*="video"]') ||
+                                post.querySelector('[aria-label*="reel"]');
+            
+            if (hasVideoIcon) {
+              const href = post.href;
+              const img = post.querySelector('img');
+              const thumbnail = img ? img.src : null;
+              
+              // Try to find view count in various possible locations
+              let viewCount = 0;
+              const viewElements = [
+                post.querySelector('[aria-label*="views"]'),
+                post.querySelector('[aria-label*="view"]'),
+                post.nextElementSibling?.querySelector('[aria-label*="views"]'),
+                post.parentElement?.querySelector('[aria-label*="views"]')
+              ];
+
+              for (const element of viewElements) {
+                if (element && element.textContent) {
+                  const viewText = element.textContent.toLowerCase();
+                  const viewMatch = viewText.match(/(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:k|m|views?)/i);
+                  if (viewMatch) {
+                    let views = parseFloat(viewMatch[1].replace(/,/g, ''));
+                    if (viewText.includes('k')) views *= 1000;
+                    if (viewText.includes('m')) views *= 1000000;
+                    viewCount = Math.floor(views);
+                    break;
+                  }
+                }
+              }
+
+              if (href && !videoData.find(v => v.permalink === href)) {
+                videoData.push({
+                  id: href.split('/p/')[1]?.split('/')[0] || Date.now().toString(),
+                  permalink: href,
+                  thumbnailUrl: thumbnail,
+                  viewCount: viewCount,
+                  timestamp: new Date().toISOString() // Will be updated with actual data
+                });
+              }
+            }
+          } catch (error) {
+            console.log('Error processing post:', error);
+          }
+        });
+
+        return videoData;
+      });
+
+      // Add new videos that we haven't seen before
+      newVideos.forEach(video => {
+        if (!videos.find(v => v.permalink === video.permalink)) {
+          videos.push(video);
+        }
+      });
+
+      console.log(`📊 [VISUAL SCRAPER] Found ${videos.length} videos so far...`);
+
+      // Scroll down to load more posts
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+
+      // Wait for new content to load
+      await page.waitForTimeout(2000);
+      scrollCount++;
+    }
+
+    // Now get additional details for each video using Graph API
+    console.log('📡 [VISUAL SCRAPER] Enhancing with Graph API data...');
+    const enhancedVideos = await enhanceWithGraphAPI(videos.slice(0, limit), settings);
+
+    // Return all videos with both view counts AND engagement data
+    // Phase 9 controller will handle filtering and fallback logic
+    const processedVideos = enhancedVideos.map(video => ({
+      ...video,
+      // Ensure we have both metrics for proper filtering
+      viewCount: video.viewCount || 0,
+      engagement: video.engagement || 0,
+      // Add metadata about data source
+      dataSource: video.viewCount > 0 ? 'visual_scraper' : 'graph_api_only'
+    }));
+
+    const withViews = processedVideos.filter(v => v.viewCount > 0).length;
+    const withEngagement = processedVideos.filter(v => v.engagement > 0).length;
+
+    console.log(`✅ [VISUAL SCRAPER] Processed ${processedVideos.length} videos:`);
+    console.log(`   📊 ${withViews} with view counts (visual scraping)`);
+    console.log(`   💖 ${withEngagement} with engagement data (Graph API)`);
+    
+    if (processedVideos.length > 0) {
+      const topVideo = processedVideos[0];
+      console.log(`🎯 [VISUAL SCRAPER] Top video: ${topVideo.viewCount?.toLocaleString() || 'N/A'} views, ${topVideo.engagement || 'N/A'} engagement`);
+    }
+
+    return processedVideos;
+
+  } catch (error) {
+    console.error('❌ [VISUAL SCRAPER ERROR]', error);
+    throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+/**
+ * Get Instagram username from business account ID
+ */
+async function getInstagramUsername(accessToken, businessAccountId) {
+  try {
+    const response = await fetch(`https://graph.facebook.com/v19.0/${businessAccountId}?fields=username&access_token=${accessToken}`);
+    const data = await response.json();
+    return data.username;
+  } catch (error) {
+    console.error('Error getting Instagram username:', error);
+    return null;
+  }
+}
+
+/**
+ * Enhance scraped videos with Graph API data (caption, media_url, etc.)
+ */
+async function enhanceWithGraphAPI(videos, settings) {
+  try {
     const accessToken = settings.instagramToken;
     const businessAccountId = settings.igBusinessId;
 
-    // Get media from Instagram Graph API
-    const mediaUrl = `https://graph.facebook.com/v19.0/${businessAccountId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,like_count,comments_count,permalink&access_token=${accessToken}&limit=${limit}`;
+    // Get all media from Graph API
+    const mediaUrl = `https://graph.facebook.com/v19.0/${businessAccountId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,like_count,comments_count,permalink&access_token=${accessToken}&limit=500`;
     
-    console.log('📡 [INSTAGRAM SCRAPER] Fetching from Graph API...');
     const response = await fetch(mediaUrl);
     const data = await response.json();
 
     if (data.error) {
-      throw new Error(`Instagram API Error: ${data.error.message}`);
+      console.warn('Graph API error:', data.error.message);
+      return videos; // Return videos without enhancement
     }
 
-    // Filter for videos only and calculate engagement
-    const videos = data.data
-      .filter(item => item.media_type === 'VIDEO')
-      .map(video => ({
-        id: video.id,
-        caption: video.caption || '',
-        mediaUrl: video.media_url,
-        thumbnailUrl: video.thumbnail_url,
-        timestamp: video.timestamp,
-        likeCount: video.like_count || 0,
-        commentsCount: video.comments_count || 0,
-        engagement: (video.like_count || 0) + (video.comments_count || 0) * 5, // Comments worth 5x likes
-        permalink: video.permalink,
-        downloadUrl: video.media_url // Direct download URL
-      }))
-      .sort((a, b) => b.engagement - a.engagement); // Sort by highest engagement
+    const apiVideos = data.data.filter(item => item.media_type === 'VIDEO');
 
-    console.log(`✅ [INSTAGRAM SCRAPER] Found ${videos.length} videos, top engagement: ${videos[0]?.engagement || 0}`);
-    return videos;
+    // Match visual scraper data with API data
+    return videos.map(video => {
+      const apiMatch = apiVideos.find(api => 
+        api.permalink === video.permalink || 
+        api.id === video.id
+      );
+
+      if (apiMatch) {
+        return {
+          ...video,
+          id: apiMatch.id,
+          caption: apiMatch.caption || '',
+          mediaUrl: apiMatch.media_url,
+          downloadUrl: apiMatch.media_url,
+          timestamp: apiMatch.timestamp,
+          likeCount: apiMatch.like_count || 0,
+          commentsCount: apiMatch.comments_count || 0,
+          engagement: (apiMatch.like_count || 0) + (apiMatch.comments_count || 0) * 5
+        };
+      }
+
+      return video;
+    });
 
   } catch (error) {
-    console.error('❌ [INSTAGRAM SCRAPER ERROR]', error);
-    throw error;
+    console.error('Error enhancing with Graph API:', error);
+    return videos;
   }
 }
 

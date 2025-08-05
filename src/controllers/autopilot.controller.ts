@@ -309,25 +309,46 @@ export const runPhase9System = async (req: Request, res: Response) => {
     const recentPosts = await getLast30AutopilotPosts('instagram');
     const recentFingerprints = recentPosts.map((v: any) => generateContentFingerprint(v));
 
-    // Step 3: Filter eligible videos
-    console.log('⚡ [PHASE 9] Step 3: Filtering eligible videos...');
-    const minEngagement = settings.minEngagement || 10000;
+    // Step 3: Filter eligible videos - PHASE 9 uses VIEW COUNTS (primary) with ENGAGEMENT fallback
+    console.log('⚡ [PHASE 9] Step 3: Filtering eligible videos by VIEW COUNT (engagement fallback)...');
+    const minThreshold = settings.minViews || 10000;
+    
     const eligible = videos
-      .filter((v: any) => v.engagement >= minEngagement)
+      .filter((v: any) => {
+        // Primary: Use view count if available (visual scraper)
+        if (v.viewCount && v.viewCount > 0) {
+          return v.viewCount >= minThreshold;
+        }
+        // Fallback: Use engagement if no view count (Graph API only)
+        return v.engagement >= minThreshold;
+      })
       .filter((v: any) => !recentFingerprints.includes(generateContentFingerprint(v)))
-      .sort((a: any, b: any) => b.engagement - a.engagement);
+      .sort((a: any, b: any) => {
+        // Primary sort by view count, fallback to engagement
+        const aScore = a.viewCount > 0 ? a.viewCount : a.engagement;
+        const bScore = b.viewCount > 0 ? b.viewCount : b.engagement;
+        return bScore - aScore;
+      });
 
     if (!eligible.length) {
+      const eligibleByViews = videos.filter((v: any) => v.viewCount >= minThreshold).length;
+      const eligibleByEngagement = videos.filter((v: any) => v.engagement >= minThreshold).length;
+      
       return res.status(404).json({
         success: false,
-        message: `No eligible videos found (need ≥${minEngagement} engagement, not recently posted)`,
+        message: `No eligible videos found (need ≥${minThreshold.toLocaleString()} views/engagement, not recently posted)`,
         videosScraped: videos.length,
+        eligibleByViews,
+        eligibleByEngagement,
         error: 'NO_ELIGIBLE_VIDEOS'
       });
     }
 
     const selectedVideo = eligible[0];
-    console.log(`🎯 [PHASE 9] Selected video with ${selectedVideo.engagement} engagement`);
+    const primaryMetric = selectedVideo.viewCount > 0 ? 'views' : 'engagement';
+    const primaryValue = selectedVideo.viewCount > 0 ? selectedVideo.viewCount : selectedVideo.engagement;
+    
+    console.log(`🎯 [PHASE 9] Selected video with ${primaryValue?.toLocaleString()} ${primaryMetric} (views: ${selectedVideo.viewCount || 'N/A'}, engagement: ${selectedVideo.engagement || 'N/A'})`);
 
     // Step 4: Generate smart caption
     console.log('✍️ [PHASE 9] Step 4: Generating smart caption...');
@@ -419,8 +440,9 @@ export const runPhase9System = async (req: Request, res: Response) => {
         eligibleVideos: eligible.length,
         selectedVideo: {
           id: selectedVideo.id,
+          viewCount: selectedVideo.viewCount,
           engagement: selectedVideo.engagement,
-          caption: selectedVideo.caption.substring(0, 100) + '...'
+          caption: selectedVideo.caption?.substring(0, 100) + '...'
         },
         generatedCaption: newCaption,
         s3Upload: {
