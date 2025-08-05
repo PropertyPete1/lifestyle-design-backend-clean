@@ -3,7 +3,7 @@ services:
     name: lifestyle-design-backend-v2
     env: node
     plan: free
-    buildCommand: chmod +x render-install-optimized.sh && timeout 1200 ./render-install-optimized.sh || echo "Build completed with timeout fallback"
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
     buildTimeoutSec: 1800

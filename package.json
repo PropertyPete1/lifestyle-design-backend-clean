@@ -4,7 +4,7 @@
   "description": "Backend v2 for Lifestyle Design Auto Poster",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "ts-node server.ts",
     "build": "echo 'Build complete - using optimized Render install script'",
     "dev": "node server.js",
     "postinstall": "echo 'Core dependencies ready'",
