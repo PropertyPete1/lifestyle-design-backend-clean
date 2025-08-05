@@ -118,8 +118,8 @@ app.get('/api/dashboard/analytics', async (req, res) => {
     
     // Get analytics from both platforms in parallel
     const [instagramData, youtubeData] = await Promise.all([
-      getInstagramAnalytics(),
-      getYouTubeAnalytics()
+      getInstagramAnalytics(Settings),
+      getYouTubeAnalytics(Settings)
     ]);
     
     const response = {
@@ -158,7 +158,7 @@ app.get('/api/dashboard/analytics', async (req, res) => {
 // Individual platform endpoints
 app.get('/api/instagram/analytics', async (req, res) => {
   try {
-    const data = await getInstagramAnalytics();
+    const data = await getInstagramAnalytics(Settings);
     res.json(data);
   } catch (error) {
     console.error('❌ [INSTAGRAM ANALYTICS ERROR]', error);
@@ -168,7 +168,7 @@ app.get('/api/instagram/analytics', async (req, res) => {
 
 app.get('/api/youtube/analytics', async (req, res) => {
   try {
-    const data = await getYouTubeAnalytics();
+    const data = await getYouTubeAnalytics(Settings);
     res.json(data);
   } catch (error) {
     console.error('❌ [YOUTUBE ANALYTICS ERROR]', error);
@@ -183,8 +183,8 @@ app.get('/api/chart/status', async (req, res) => {
     
     // Get current analytics data
     const [instagramData, youtubeData] = await Promise.all([
-      getInstagramAnalytics(),
-      getYouTubeAnalytics()
+      getInstagramAnalytics(Settings),
+      getYouTubeAnalytics(Settings)
     ]);
     
     // Generate sample chart data points (in real app, this would come from historical data)

@@ -3,12 +3,12 @@
  * Fetches actual subscriber count, views, and growth metrics
  */
 
-const Settings = require('../models/Settings');
+// Settings model is embedded in server.js - we'll get it via parameter
 
 /**
  * Get YouTube channel analytics using YouTube Data API v3
  */
-async function getYouTubeAnalytics() {
+async function getYouTubeAnalytics(Settings) {
   try {
     console.log('🎬 [YOUTUBE ANALYTICS] Fetching channel data...');
     

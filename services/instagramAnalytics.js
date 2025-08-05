@@ -3,12 +3,12 @@
  * Fetches actual follower count, engagement, and growth metrics
  */
 
-const Settings = require('../models/Settings');
+// Settings model is embedded in server.js - we'll get it via parameter
 
 /**
  * Get Instagram account analytics using Graph API
  */
-async function getInstagramAnalytics() {
+async function getInstagramAnalytics(Settings) {
   try {
     console.log('📱 [INSTAGRAM ANALYTICS] Fetching account data...');
     
