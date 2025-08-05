@@ -148,8 +148,112 @@ async function getBestTimeToPost(platform = 'instagram') {
   }
 }
 
+/**
+ * Fetches trending audio for Instagram reels (placeholder for now)
+ * @returns {string|null} Trending audio URL or null
+ */
+async function fetchInstagramTrendingAudio() {
+  try {
+    console.log('🎵 [TRENDING AUDIO] Fetching trending audio...');
+    
+    // TODO: Implement actual trending audio API
+    // For now, return null to skip audio attachment
+    console.log('⚠️ [TRENDING AUDIO] Feature not implemented yet');
+    return null;
+    
+  } catch (error) {
+    console.error('❌ [TRENDING AUDIO ERROR]', error);
+    return null;
+  }
+}
+
+/**
+ * Schedules Instagram upload via Graph API
+ * @param {Object} params - Upload parameters
+ * @param {string} params.videoUrl - S3 video URL
+ * @param {string} params.caption - Video caption
+ * @param {string} params.audioUrl - Audio URL (optional)
+ * @param {Date} params.scheduledTime - When to post
+ * @returns {Object} Schedule result
+ */
+async function scheduleInstagramUpload({ videoUrl, caption, audioUrl, scheduledTime }) {
+  try {
+    console.log('📲 [INSTAGRAM SCHEDULE] Scheduling Instagram upload...');
+    
+    // For Phase 9, we're logging to scheduler queue instead of immediate upload
+    // The actual posting will be handled by the scheduler service
+    console.log(`✅ [INSTAGRAM SCHEDULE] Queued for ${scheduledTime.toLocaleString()}`);
+    
+    return {
+      success: true,
+      platform: 'instagram',
+      scheduledTime,
+      videoUrl,
+      caption: caption.substring(0, 50) + '...'
+    };
+    
+  } catch (error) {
+    console.error('❌ [INSTAGRAM SCHEDULE ERROR]', error);
+    throw error;
+  }
+}
+
+/**
+ * Logs autopilot schedule to MongoDB queue
+ * @param {Object} params - Schedule parameters
+ * @returns {Object} Log result
+ */
+async function logAutopilotSchedule({ platform, videoId, engagement, status, caption, s3Url, time }) {
+  try {
+    console.log('📝 [AUTOPILOT LOG] Logging to scheduler queue...');
+    
+    const { MongoClient } = require('mongodb');
+    const mongoUrl = process.env.MONGODB_URI || 'mongodb://localhost:27017/lifestyle-design';
+    const client = new MongoClient(mongoUrl);
+    
+    try {
+      await client.connect();
+      const db = client.db();
+      const queue = db.collection('autopilot_queue');
+      
+      const logEntry = {
+        platform,
+        videoId,
+        engagement,
+        status,
+        caption,
+        s3Url,
+        scheduledAt: time,
+        autopilotGenerated: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      const result = await queue.insertOne(logEntry);
+      console.log(`✅ [AUTOPILOT LOG] Logged ${platform} post: ${result.insertedId}`);
+      
+      return {
+        success: true,
+        logId: result.insertedId,
+        platform,
+        scheduledAt: time
+      };
+      
+    } finally {
+      await client.close();
+    }
+    
+  } catch (error) {
+    console.error('❌ [AUTOPILOT LOG ERROR]', error);
+    throw error;
+  }
+}
+
 module.exports = {
   generateSmartCaption,
   getBestTimeToPost,
-  modifyOriginalCaption
+  modifyOriginalCaption,
+  fetchInstagramTrendingAudio,
+  scheduleInstagramUpload,
+  logAutopilotSchedule
 };

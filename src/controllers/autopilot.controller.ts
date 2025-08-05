@@ -13,7 +13,7 @@ import Settings from '../models/Settings';
 // Import Phase 9 services
 const { scrapeLatestInstagramVideos, getLast30AutopilotPosts, generateContentFingerprint, downloadInstagramMedia } = require('../../services/instagramScraper');
 const { uploadToS3, generateAutopilotFilename } = require('../../services/s3Uploader');
-const { generateSmartCaption, getBestTimeToPost } = require('../../services/captionAI');
+const { generateSmartCaption, getBestTimeToPost, fetchInstagramTrendingAudio, scheduleInstagramUpload, logAutopilotSchedule } = require('../../services/captionAI');
 
 /**
  * STEP 3: AutoPilot run endpoint - Posts videos with cleanup, no MongoDB file saving
@@ -271,6 +271,92 @@ export const runAutoPilotBatch = async (req: Request, res: Response) => {
  * PHASE 9: Complete Instagram AutoPilot Repost System
  * Scrapes Instagram, selects top engagement video, uploads to S3, schedules posting
  */
+/**
+ * PHASE 9: Instagram AutoPilot Repost System – Exact Implementation
+ * Follows the 12 rules specified by user
+ */
+async function autopilotInstagramRepost() {
+  const videos = await scrapeLatestInstagramVideos(500); // ⬅️ Graph API fetch
+  const recentPosts = await getLast30AutopilotPosts('instagram'); // 🧠 Last 30 IG posts
+  const recentFingerprints = recentPosts.map(v => generateContentFingerprint(v));
+
+  const eligible = videos
+    .filter(v => {
+      // Use view count (primary) or engagement (fallback) >= 10000
+      const score = v.viewCount > 0 ? v.viewCount : v.engagement;
+      return score >= 10000;
+    })
+    .filter(v => !recentFingerprints.includes(generateContentFingerprint(v)))
+    .sort((a, b) => {
+      // Sort by view count if available, else engagement
+      const aScore = a.viewCount > 0 ? a.viewCount : a.engagement;
+      const bScore = b.viewCount > 0 ? b.viewCount : b.engagement;
+      return bScore - aScore; // 🥇 Highest engagement first
+    });
+
+  if (!eligible.length) {
+    console.log("❌ No eligible videos found for repost.");
+    return { success: false, message: "No eligible videos found" };
+  }
+
+  const video = eligible[0];
+  const caption = await generateSmartCaption(video.caption); // ✍️ GPT-4 rewrite
+
+  const rawFile = await downloadInstagramMedia(video.downloadUrl); // ⬇️ Download from IG
+
+  // ☁️ Upload to S3
+  const s3UploadResult = await uploadToS3({
+    file: rawFile,
+    filename: `autopilot-${Date.now()}.mp4`,
+    bucket: process.env.S3_BUCKET_NAME,
+    region: process.env.S3_REGION,
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  });
+
+  const videoUrl = s3UploadResult.Location;
+
+  // 🎵 Optional: attach trending audio
+  const settings = await Settings.findOne();
+  const audioTrack = settings.trendingAudio ? await fetchInstagramTrendingAudio() : null;
+
+  // 🕒 Smart scheduling
+  const scheduledTime = await getBestTimeToPost('instagram');
+
+  // 📲 Post to Instagram
+  await scheduleInstagramUpload({
+    videoUrl,
+    caption,
+    audioUrl: audioTrack,
+    scheduledTime,
+  });
+
+  // ✅ Log in scheduler only — do NOT store full video in DB
+  await logAutopilotSchedule({
+    platform: 'instagram',
+    videoId: video.id,
+    engagement: video.engagement,
+    status: 'scheduled',
+    caption,
+    s3Url: videoUrl,
+    time: scheduledTime,
+  });
+
+  console.log("✅ Video scheduled successfully.");
+  
+  return {
+    success: true,
+    selectedVideo: {
+      id: video.id,
+      viewCount: video.viewCount,
+      engagement: video.engagement
+    },
+    caption,
+    s3Url: videoUrl,
+    scheduledTime
+  };
+}
+
 export const runPhase9System = async (req: Request, res: Response) => {
   try {
     console.log('🚀 [PHASE 9] Starting Instagram AutoPilot Repost System...');
