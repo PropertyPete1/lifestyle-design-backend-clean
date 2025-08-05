@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: lifestyle-design-backend-v2-fresh
+    env: node
+    plan: free
+    buildCommand: npm install --production
+    startCommand: node start.js
+    healthCheckPath: /health
+    buildTimeoutSec: 1800
+    rootDir: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    scaling:
+      minInstances: 0
+      maxInstances: 1
+    autoDeploy: true
+    branch: main
+    regions:
+      - virginia
