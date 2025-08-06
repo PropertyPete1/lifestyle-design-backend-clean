@@ -24,7 +24,7 @@ async function postToInstagram(postData, settings) {
     
     // Step 1: Create media container
     const containerParams = new URLSearchParams({
-      image_url: s3Url,
+      video_url: s3Url,
       caption: caption,
       access_token: settings.instagramToken
     });
