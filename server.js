@@ -265,12 +265,22 @@ app.post('/api/autopilot/run', async (req, res) => {
         // STEP 7: Download video from Instagram
         console.log('⬇️ [AUTOPILOT] Downloading video from Instagram...');
         console.log('🔗 [DEBUG] Video URL:', video.url);
-        const videoBuffer = await downloadVideoFromInstagram(video.url);
         
-        // STEP 8: Upload to S3 for hosting
-        console.log('☁️ [AUTOPILOT] Uploading to S3...');
-        const s3Key = generateS3Key('auto', `video_${i + 1}.mp4`);
-        const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
+        let s3Url;
+        try {
+          const videoBuffer = await downloadVideoFromInstagram(video.url);
+          
+          // STEP 8: Upload to S3 for hosting
+          console.log('☁️ [AUTOPILOT] Uploading to S3...');
+          const s3Key = generateS3Key('auto', `video_${i + 1}.mp4`);
+          s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
+          console.log('✅ [AUTOPILOT] S3 upload successful:', s3Url);
+        } catch (downloadError) {
+          console.error('❌ [AUTOPILOT] Video download/upload failed:', downloadError.message);
+          // Use original Instagram URL as fallback for posting
+          s3Url = video.url;
+          console.log('🔄 [AUTOPILOT] Using original Instagram URL as fallback');
+        }
         
         // STEP 9: Generate smart caption with OpenAI
         console.log('🧠 [AUTOPILOT] Generating smart caption...');
