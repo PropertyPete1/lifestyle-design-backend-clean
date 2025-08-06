@@ -196,25 +196,44 @@ app.post('/api/autopilot/run', async (req, res) => {
     // STEP 5: Get last 30 POSTED videos (not date-based)
     const last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
     
-    let selectedVideo = null;
+    let selectedVideos = [];
     let scheduledPosts = [];
+    const maxPosts = settings.maxPosts || 5; // Use configured maxPosts setting
     
-    // STEP 6: Find unique video (not posted, not visually similar)
+    console.log(`🎯 [AUTOPILOT] Looking for up to ${maxPosts} videos to queue...`);
+    
+    // STEP 6: Find unique videos (not posted, not visually similar)
     for (const video of qualifiedVideos) {
+      if (selectedVideos.length >= maxPosts) {
+        console.log(`✅ [AUTOPILOT] Reached maximum of ${maxPosts} videos`);
+        break; // Stop when we have enough videos
+      }
+      
       const alreadyPosted = last30Posted.some(prev => prev.fingerprint === video.fingerprint);
       const looksSimilar = last30Posted.some(prev => prev.thumbnailHash === video.thumbnailHash || prev.caption === video.caption);
       
       if (!alreadyPosted && !looksSimilar) {
-        console.log(`🎯 [AUTOPILOT] Selected video with ${video.engagement} engagement`);
-        selectedVideo = video;
+        console.log(`🎯 [AUTOPILOT] Selected video ${selectedVideos.length + 1}/${maxPosts} with ${video.engagement} engagement`);
+        selectedVideos.push(video);
         
+      }
+    }
+    
+    // STEP 7-12: Process all selected videos
+    console.log(`🔄 [AUTOPILOT] Processing ${selectedVideos.length} selected videos...`);
+    
+    for (let i = 0; i < selectedVideos.length; i++) {
+      const video = selectedVideos[i];
+      console.log(`📹 [AUTOPILOT] Processing video ${i + 1}/${selectedVideos.length}...`);
+      
+      try {
         // STEP 7: Download video from Instagram
         console.log('⬇️ [AUTOPILOT] Downloading video from Instagram...');
         const localPath = await downloadVideoFromInstagram(video.url);
         
         // STEP 8: Upload to S3 for hosting
         console.log('☁️ [AUTOPILOT] Uploading to S3...');
-        const s3Key = generateS3Key('auto', 'video.mp4');
+        const s3Key = generateS3Key('auto', `video_${i + 1}.mp4`);
         const s3Url = await uploadBufferToS3(localPath, s3Key, settings);
         
         // STEP 9: Generate smart caption with OpenAI
@@ -228,11 +247,21 @@ app.post('/api/autopilot/run', async (req, res) => {
           trendingAudio = await findTrendingAudio('instagram');
         }
         
-        // STEP 11: Smart scheduling (5-10 PM optimal window)
-        const getRandomPostTime = () => {
-          const hour = Math.floor(Math.random() * (22 - 17 + 1)) + 17; // 5-10 PM
+        // STEP 11: Smart scheduling (5-10 PM optimal window, staggered)
+        const getRandomPostTime = (videoIndex) => {
+          const baseHour = 17; // Start at 5 PM
+          const hourOffset = Math.floor(videoIndex * 0.5); // Stagger videos by 30 minutes
+          const hour = Math.min(baseHour + hourOffset, 22); // Don't go past 10 PM
+          const minute = (videoIndex * 30) % 60; // 30-minute intervals
+          
           const scheduledTime = new Date();
-          scheduledTime.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
+          scheduledTime.setHours(hour, minute, 0, 0);
+          
+          // If time is in the past, schedule for tomorrow
+          if (scheduledTime < new Date()) {
+            scheduledTime.setDate(scheduledTime.getDate() + 1);
+          }
+          
           return scheduledTime;
         };
         
@@ -242,7 +271,7 @@ app.post('/api/autopilot/run', async (req, res) => {
         if (settings.postToYouTube === true) platforms.push('youtube');
         
         for (const platform of platforms) {
-          const scheduledTime = getRandomPostTime();
+          const scheduledTime = getRandomPostTime(i);
           
           const queueEntry = new SchedulerQueueModel({
             filename: s3Key,
@@ -257,7 +286,7 @@ app.post('/api/autopilot/run', async (req, res) => {
           });
           
           await queueEntry.save();
-          console.log(`📅 [AUTOPILOT] Scheduled ${platform} post for ${scheduledTime.toLocaleString()}`);
+          console.log(`📅 [AUTOPILOT] Scheduled ${platform} post ${i + 1} for ${scheduledTime.toLocaleString()}`);
           
           scheduledPosts.push({
             platform: platform,
@@ -266,7 +295,9 @@ app.post('/api/autopilot/run', async (req, res) => {
           });
         }
         
-        break; // Only process one video per autopilot run
+      } catch (videoError) {
+        console.error(`❌ [AUTOPILOT] Error processing video ${i + 1}:`, videoError);
+        // Continue processing remaining videos
       }
     }
     
@@ -274,17 +305,19 @@ app.post('/api/autopilot/run', async (req, res) => {
     settings.lastAutopilotRun = new Date();
     await settings.save();
     
-    console.log('✅ [AUTOPILOT] Comprehensive autopilot run completed successfully');
+    console.log(`✅ [AUTOPILOT] Comprehensive autopilot run completed successfully - ${selectedVideos.length} videos processed`);
     
     res.json({
       success: true,
-      message: 'AutoPilot run completed successfully',
-      videosScraped: scrapedVideos.length,
+      message: `AutoPilot run completed successfully - ${selectedVideos.length} videos queued`,
+      videosScraped: scrapedVideos?.length || 0,
       videosScheduled: scheduledPosts.length,
-      selectedVideo: selectedVideo ? {
-        engagement: selectedVideo.engagement,
-        duration: selectedVideo.duration || 30
-      } : null,
+      videosProcessed: selectedVideos.length,
+      maxPostsConfigured: maxPosts,
+      selectedVideos: selectedVideos.map(v => ({
+        engagement: v.engagement,
+        duration: v.duration || 30
+      })),
       scheduledPosts: scheduledPosts
     });
     
