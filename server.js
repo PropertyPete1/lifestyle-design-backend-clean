@@ -117,6 +117,18 @@ app.get('/api/autopilot/status', async (req, res) => {
   }
 });
 
+// Clear queue endpoint for testing
+app.delete('/api/autopilot/queue', async (req, res) => {
+  try {
+    const result = await SchedulerQueueModel.deleteMany({});
+    console.log(`🗑️ [QUEUE] Cleared ${result.deletedCount} records`);
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error('❌ [QUEUE CLEAR ERROR]', error);
+    res.status(500).json({ error: 'Failed to clear queue' });
+  }
+});
+
 app.get('/api/autopilot/queue', async (req, res) => {
   try {
     console.log('📋 [AUTOPILOT QUEUE] Fetching real queue data from SchedulerQueueModel...');
