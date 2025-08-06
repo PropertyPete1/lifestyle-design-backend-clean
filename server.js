@@ -88,6 +88,12 @@ const connectDB = async () => {
     const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/lifestyle-design';
     await mongoose.connect(mongoUri);
     console.log('✅ [DATABASE] MongoDB connected successfully');
+    
+    // Start the cron scheduler after DB connection
+    const { startCronScheduler } = require('./services/cronScheduler');
+    const cronJob = startCronScheduler(SchedulerQueueModel, SettingsModel);
+    console.log('⏰ [CRON] Scheduler started - posts will execute automatically');
+    
   } catch (error) {
     console.error('❌ [DATABASE] MongoDB connection failed:', error);
     process.exit(1);
