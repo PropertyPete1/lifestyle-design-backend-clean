@@ -266,13 +266,17 @@ app.post('/api/autopilot/run', async (req, res) => {
         console.log('⬇️ [AUTOPILOT] Downloading video from Instagram...');
         console.log('🔗 [DEBUG] Video URL:', video.url);
         
+        // Define s3Key before try block to ensure proper scope
+        const timestamp = Date.now();
+        const uniqueId = Math.random().toString(36).substring(7);
+        const s3Key = `autopilot/auto/${timestamp}_${uniqueId}.mp4`;
+        
         let s3Url;
         try {
           const videoBuffer = await downloadVideoFromInstagram(video.url);
           
           // STEP 8: Upload to S3 for hosting
           console.log('☁️ [AUTOPILOT] Uploading to S3...');
-          const s3Key = generateS3Key('auto', `video_${i + 1}.mp4`);
           s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
           console.log('✅ [AUTOPILOT] S3 upload successful:', s3Url);
         } catch (downloadError) {
