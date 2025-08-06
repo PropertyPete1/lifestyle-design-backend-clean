@@ -130,7 +130,7 @@ app.get('/api/autopilot/queue', async (req, res) => {
       id: index + 1,
       platform: post.platform || 'instagram',
       videoUrl: post.s3Url || 'https://example.com/video.mp4',
-      thumbnailUrl: post.s3Url || 'https://example.com/video.mp4', // Use video URL as thumbnail
+      thumbnailUrl: post.thumbnailPath || 'https://via.placeholder.com/300x200/4F46E5/white?text=Video+Thumbnail', // Use extracted thumbnail or placeholder
       caption: post.caption || 'AI-generated content',
       scheduledTime: post.scheduledTime,
       status: post.status,
