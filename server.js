@@ -246,10 +246,10 @@ app.post('/api/autopilot/run', async (req, res) => {
         console.log('⬇️ [AUTOPILOT] Downloading video from Instagram...');
         const localPath = await downloadVideoFromInstagram(video.url);
         
-        // STEP 8: Use original Instagram video URL directly (S3 bypass for now)
-        console.log('🔗 [AUTOPILOT] Using original Instagram video URL...');
+        // STEP 8: Upload to S3 for hosting
+        console.log('☁️ [AUTOPILOT] Uploading to S3...');
         const s3Key = generateS3Key('auto', `video_${i + 1}.mp4`);
-        const s3Url = video.url; // Use original Instagram URL directly
+        const s3Url = await uploadBufferToS3(localPath, s3Key, settings);
         
         // STEP 9: Generate smart caption with OpenAI
         console.log('🧠 [AUTOPILOT] Generating smart caption...');
