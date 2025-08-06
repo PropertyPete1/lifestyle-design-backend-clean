@@ -28,6 +28,7 @@ const settingsSchema = new mongoose.Schema({
   autopilotEnabled: { type: Boolean, default: false },
   cartoonMode: { type: Boolean, default: false },
   schedulerType: { type: String, default: 'daily' },
+  repostDelay: { type: Number, default: 2 },
 }, { timestamps: true, collection: 'SettingsClean' });
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
