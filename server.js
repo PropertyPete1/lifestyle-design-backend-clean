@@ -117,6 +117,26 @@ app.get('/api/autopilot/status', async (req, res) => {
   }
 });
 
+// S3 test endpoint
+app.post('/api/test/s3', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOne();
+    const { uploadBufferToS3, generateS3Key } = require('./utils/s3Uploader');
+    
+    // Create a small test file
+    const testData = Buffer.from('test video data');
+    const s3Key = generateS3Key('test', 'test.mp4');
+    
+    console.log('🧪 [S3 TEST] Testing upload with credentials...');
+    const s3Url = await uploadBufferToS3(testData, s3Key, settings);
+    
+    res.json({ success: true, s3Url, message: 'S3 upload successful' });
+  } catch (error) {
+    console.error('❌ [S3 TEST ERROR]', error);
+    res.status(500).json({ error: error.message, details: error.stack });
+  }
+});
+
 // Clear queue endpoint for testing
 app.delete('/api/autopilot/queue', async (req, res) => {
   try {
