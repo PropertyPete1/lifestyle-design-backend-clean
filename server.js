@@ -131,8 +131,10 @@ app.get('/api/autopilot/queue', async (req, res) => {
       platform: post.platform || 'instagram',
       videoUrl: post.s3Url || 'https://example.com/video.mp4',
       thumbnailUrl: post.thumbnailPath || 'https://via.placeholder.com/300x200/4F46E5/white?text=Video+Thumbnail', // Use extracted thumbnail or placeholder
+      s3Url: post.s3Url, // Frontend expects this field name for video preview
       caption: post.caption || 'AI-generated content',
       scheduledTime: post.scheduledTime,
+      scheduledAt: post.scheduledTime, // Frontend expects this field name for scheduled time
       status: post.status,
       engagement: post.engagement || 0,
       source: post.source || 'autopilot'
