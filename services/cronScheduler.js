@@ -5,6 +5,70 @@
 
 const cron = require('node-cron');
 const { executeScheduledPost } = require('./postExecutor');
+const fetch = require('node-fetch');
+
+/**
+ * Smart Autopilot Refill System - Maintains queue at target level
+ * @param {Object} SchedulerQueueModel - Mongoose model for queue
+ * @param {Object} SettingsModel - Mongoose model for settings
+ */
+async function triggerAutopilotRefill(SchedulerQueueModel, SettingsModel) {
+  try {
+    console.log('🤖 [REFILL] Checking if autopilot refill is needed...');
+    
+    // Get current settings
+    const settings = await SettingsModel.findOne({});
+    if (!settings || !settings.autopilotEnabled) {
+      console.log('⚠️ [REFILL] Autopilot disabled, skipping refill');
+      return;
+    }
+    
+    // Check current queue count
+    const currentQueueCount = await SchedulerQueueModel.countDocuments({ 
+      status: 'scheduled' 
+    });
+    
+    const targetCount = settings.maxPosts || 5;
+    const refillThreshold = Math.max(1, Math.floor(targetCount * 0.6)); // Refill when 60% empty
+    
+    console.log(`📊 [REFILL] Queue: ${currentQueueCount}/${targetCount} (threshold: ${refillThreshold})`);
+    
+    if (currentQueueCount <= refillThreshold) {
+      console.log(`🚀 [REFILL] Queue low (${currentQueueCount} <= ${refillThreshold}), triggering autopilot...`);
+      
+      // Call the autopilot endpoint internally
+      try {
+        // Use environment variable or fallback to localhost
+        const baseUrl = process.env.NODE_ENV === 'production' 
+          ? 'https://lifestyle-design-backend-v2-clean.onrender.com'
+          : 'http://localhost:3001';
+          
+        const response = await fetch(`${baseUrl}/api/autopilot/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'auto-refill' })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log(`✅ [REFILL] Autopilot refill completed: ${result.videosProcessed} videos added`);
+        } else {
+          console.error(`❌ [REFILL] Autopilot refill failed: ${result.error}`);
+        }
+        
+      } catch (refillError) {
+        console.error('❌ [REFILL] Error calling autopilot endpoint:', refillError);
+      }
+      
+    } else {
+      console.log(`✅ [REFILL] Queue sufficient (${currentQueueCount} > ${refillThreshold}), no refill needed`);
+    }
+    
+  } catch (error) {
+    console.error('❌ [REFILL] Error in autopilot refill:', error);
+  }
+}
 
 /**
  * Main cron scheduler function - checks and executes due posts
@@ -66,8 +130,8 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
           
           console.log(`✅ [CRON] Successfully posted to ${result.platform}: ${result.url}`);
           
-          // TODO: Trigger autopilot refill here
-          // await triggerAutopilotRefill(post.platform);
+          // 🤖 Smart Autopilot Refill: Check if queue needs more videos
+          await triggerAutopilotRefill(SchedulerQueueModel, SettingsModel);
           
         } else {
           // Mark as failed
@@ -186,5 +250,6 @@ module.exports = {
   startCronScheduler,
   stopCronScheduler,
   checkAndExecuteDuePosts,
-  getQueueStats
+  getQueueStats,
+  triggerAutopilotRefill
 };
