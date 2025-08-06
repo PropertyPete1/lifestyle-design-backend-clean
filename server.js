@@ -119,31 +119,31 @@ app.get('/api/autopilot/status', async (req, res) => {
 
 app.get('/api/autopilot/queue', async (req, res) => {
   try {
-    const mockQueue = [
-      {
-        id: 1,
-        platform: 'instagram',
-        videoUrl: 'https://example.com/video1.mp4',
-        caption: 'Amazing real estate opportunity!',
-        scheduledTime: new Date(Date.now() + 3600000),
-        status: 'scheduled',
-        engagement: 15000
-      },
-      {
-        id: 2,
-        platform: 'youtube', 
-        videoUrl: 'https://example.com/video2.mp4',
-        caption: 'Check out this stunning property!',
-        scheduledTime: new Date(Date.now() + 7200000),
-        status: 'scheduled',
-        engagement: 25000
-      }
-    ];
+    console.log('📋 [AUTOPILOT QUEUE] Fetching real queue data from SchedulerQueueModel...');
+    
+    // Get real queue data from SchedulerQueueModel (where comprehensive autopilot saves videos)
+    const queuedPosts = await SchedulerQueueModel.find({
+      status: 'scheduled'
+    }).sort({ scheduledTime: 1 }).exec();
+    
+    const formattedQueue = queuedPosts.map((post, index) => ({
+      id: index + 1,
+      platform: post.platform || 'instagram',
+      videoUrl: post.s3Url || 'https://example.com/video.mp4',
+      caption: post.caption || 'AI-generated content',
+      scheduledTime: post.scheduledTime,
+      status: post.status,
+      engagement: post.engagement || 0,
+      source: post.source || 'autopilot'
+    }));
+    
+    console.log(`📋 [AUTOPILOT QUEUE] Found ${formattedQueue.length} scheduled posts`);
     
     res.json({
-      queue: mockQueue,
-      totalCount: mockQueue.length,
-      platforms: ['instagram', 'youtube']
+      queue: formattedQueue,
+      posts: formattedQueue, // Frontend expects 'posts' array
+      totalCount: formattedQueue.length,
+      platforms: [...new Set(formattedQueue.map(p => p.platform))]
     });
   } catch (error) {
     console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
