@@ -197,31 +197,45 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     
     console.log(`✅ [POST NOW] Found ${scrapedVideos.length} videos to analyze`);
     
-    // STEP 2: Get last 30 posted video hashes to avoid duplicates
-    const last30Posted = await SchedulerQueueModel.find({
+    // STEP 2: Get last 30 Instagram posts with comprehensive data for duplicate prevention
+    const last30IG = await SchedulerQueueModel.find({
       platform: 'instagram',
       status: 'posted'
     })
     .sort({ postedAt: -1 })
     .limit(30)
-    .select('thumbnailHash');
+    .select('thumbnailHash caption originalVideoId');
     
-    const recentThumbs = new Set(last30Posted.map(v => v.thumbnailHash).filter(hash => hash));
-    console.log(`🛡️ [POST NOW] Avoiding ${recentThumbs.size} recently posted videos`);
+    // 👁️‍🗨️ Collect recent hashes, captions, and video IDs for multi-layer checking
+    const recentHashes = new Set(last30IG.map(v => v.thumbnailHash).filter(hash => hash));
+    const recentCaptions = new Set(last30IG.map(v => v.caption?.trim().toLowerCase().substring(0, 50)).filter(cap => cap));
+    const recentVideoIds = new Set(last30IG.map(v => v.originalVideoId).filter(id => id));
     
-    // STEP 3: Find first unique high-engagement video
+    console.log(`🛡️ [POST NOW] Multi-layer duplicate prevention:`);
+    console.log(`📸 ${recentHashes.size} recent thumbnail hashes`);
+    console.log(`📝 ${recentCaptions.size} recent caption snippets`);
+    console.log(`🆔 ${recentVideoIds.size} recent video IDs`);
+    
+    // STEP 3: Find first unique high-engagement video with enhanced duplicate checking
     let selectedVideo = null;
     for (const video of scrapedVideos) {
       if (video.engagement < 10000) continue; // Skip low engagement
       
-      // Check if this video was recently posted
-      if (recentThumbs.has(video.thumbnailHash)) {
-        console.log(`⏭️ [POST NOW] Skipping recently posted: ${video.id}`);
+      // 🧠 Multi-layer duplicate detection
+      const caption = (video.caption || "").trim().toLowerCase().substring(0, 50);
+      
+      const isDuplicate = 
+        recentHashes.has(video.thumbnailHash) ||           // Visual similarity
+        recentCaptions.has(caption) ||                     // Caption similarity  
+        recentVideoIds.has(video.id);                      // Exact video ID match
+      
+      if (isDuplicate) {
+        console.log(`⏭️ [POST NOW] Skipping duplicate: ${video.id} (hash: ${video.thumbnailHash}, caption: ${caption.substring(0, 20)}...)`);
         continue;
       }
       
       selectedVideo = video;
-      console.log(`✅ [POST NOW] Selected video: ${video.id} (${video.engagement} engagement)`);
+      console.log(`✅ [POST NOW] Selected unique video: ${video.id} (${video.engagement} engagement)`);
       break;
     }
     
