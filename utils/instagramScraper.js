@@ -162,9 +162,78 @@ async function downloadVideoFromInstagram(videoUrl) {
   }
 }
 
+/**
+ * Fetch recent Instagram videos (top 500 scraped videos)
+ * This is the exact function you specified for Post Now
+ */
+async function fetchRecentInstagramVideos() {
+  try {
+    console.log('📱 [POST NOW] Fetching recent Instagram videos...');
+    
+    // Get settings to access Instagram credentials
+    const mongoose = require('mongoose');
+    const SettingsModel = mongoose.model('SettingsClean');
+    const settings = await SettingsModel.findOne({});
+    
+    if (!settings || !settings.instagramToken || !settings.igBusinessId) {
+      throw new Error('Missing Instagram credentials in settings');
+    }
+    
+    // Use existing scraper to get videos
+    const videos = await scrapeInstagramEngagement(
+      settings.igBusinessId, 
+      settings.instagramToken, 
+      500 // Top 500 as specified
+    );
+    
+    // Convert to format expected by Post Now
+    const formattedVideos = videos.map(video => ({
+      id: video.id,
+      videoUrl: video.url,
+      caption: video.caption,
+      engagement: video.engagement,
+      likes: video.likes,
+      comments: video.comments
+    }));
+    
+    console.log(`✅ [POST NOW] Fetched ${formattedVideos.length} Instagram videos`);
+    return formattedVideos;
+    
+  } catch (error) {
+    console.error('❌ [POST NOW] Error fetching Instagram videos:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download Instagram video from URL
+ * This is the exact function you specified for Post Now
+ */
+async function downloadInstagramVideo(videoUrl) {
+  try {
+    console.log(`📥 [POST NOW] Downloading Instagram video: ${videoUrl.substring(0, 50)}...`);
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download video: ${response.status}`);
+    }
+    
+    const buffer = await response.buffer();
+    console.log(`✅ [POST NOW] Downloaded video buffer: ${buffer.length} bytes`);
+    
+    return buffer;
+    
+  } catch (error) {
+    console.error('❌ [POST NOW] Error downloading video:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   scrapeInstagramEngagement,
   generateFingerprint,
   generateThumbnailHash,
-  downloadVideoFromInstagram
+  downloadVideoFromInstagram,
+  fetchRecentInstagramVideos,
+  downloadInstagramVideo
 };
