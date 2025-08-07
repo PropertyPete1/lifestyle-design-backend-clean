@@ -243,10 +243,27 @@ app.post('/api/autopilot/run', async (req, res) => {
 // Settings endpoints
 
 console.log('✅ AutoPilot routes registered directly in server.js');
-    
-    // STEP 6: Find unique videos (not posted, not visually similar)
-    for (const video of qualifiedVideos) {
-      if (selectedVideos.length >= maxPosts) {
+
+// Analytics services (with error handling for Render deployment)
+let instagramAnalytics, youtubeAnalytics;
+try {
+  instagramAnalytics = require('./services/instagramAnalytics');
+  console.log('✅ Instagram analytics service loaded');
+} catch (error) {
+  console.log('⚠️ Instagram analytics service failed to load:', error.message);
+  instagramAnalytics = null;
+}
+
+try {
+  youtubeAnalytics = require('./services/youtubeAnalytics');
+  console.log('✅ YouTube analytics service loaded');
+} catch (error) {
+  console.log('⚠️ YouTube analytics service failed to load:', error.message);
+  youtubeAnalytics = null;
+}
+
+// Unified dashboard analytics endpoint
+app.get('/api/analytics', async (req, res) => {
         console.log(`✅ [AUTOPILOT] Reached maximum of ${maxPosts} videos`);
         break; // Stop when we have enough videos
       }

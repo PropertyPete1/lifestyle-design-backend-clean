@@ -1,208 +1,55 @@
 /**
- * Post History Utility - Track posted videos to avoid duplicates
- * Fetches last 30 posts directly from Instagram API for accurate duplicate detection
+ * Post History Management - Visual Thumbnail Analysis
+ * Handles duplicate detection using visual thumbnail hashing
  */
 
-const fetch = require('node-fetch');
-const { generateThumbnailHash } = require('./instagramScraper');
+const crypto = require('crypto');
 
 /**
- * Get last 30 posted videos directly from Instagram API
- * @param {Object} settings - User settings with Instagram credentials
- * @returns {Promise<Array>} Array of last 30 Instagram posts with visual hashes
+ * Generate visual hash from thumbnail URL using Sharp
+ * @param {string} thumbnailUrl - URL of the thumbnail image
+ * @returns {Promise<string>} Visual hash string
  */
-async function getLast30InstagramPosts(settings) {
+async function generateThumbnailHash(thumbnailUrl) {
   try {
-    console.log(`📱 [INSTAGRAM API] Fetching last 30 posts from your Instagram account...`);
+    console.log(`📸 [THUMBNAIL] Downloading for visual analysis: ${thumbnailUrl}`);
     
-    // Validate Instagram credentials
-    if (!settings.igBusinessId || !settings.instagramToken) {
-      console.error('❌ [INSTAGRAM API] Missing credentials - igBusinessId or instagramToken not found');
-      return [];
-    }
+    const sharp = require('sharp');
+    const fetch = require('node-fetch');
     
-    const mediaUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,permalink&limit=30&access_token=${settings.instagramToken}`;
-    
-    const response = await fetch(mediaUrl);
-    const data = await response.json();
-    
+    // Download thumbnail
+    const response = await fetch(thumbnailUrl);
     if (!response.ok) {
-      console.error('❌ [INSTAGRAM API] HTTP Error:', response.status, response.statusText);
-      console.error('❌ [INSTAGRAM API] Response:', data);
-      console.error('❌ [INSTAGRAM API] URL:', mediaUrl.replace(settings.instagramToken, 'TOKEN_HIDDEN'));
-      return [];
+      console.log(`❌ [THUMBNAIL] Failed to download: ${response.status}`);
+      return crypto.createHash('md5').update(thumbnailUrl).digest('hex').substring(0, 8);
     }
     
-    console.log(`📱 [INSTAGRAM API] Found ${data.data.length} recent posts`);
+    const buffer = await response.buffer();
     
-    // Generate visual hashes for each post
-    const postsWithHashes = [];
-    for (const post of data.data) {
-      if (post.media_type === 'VIDEO' && post.thumbnail_url) {
-        try {
-          const thumbnailHash = await generateThumbnailHash(post.thumbnail_url);
-          // Use ONLY visual thumbnail hash as fingerprint for pure visual duplicate detection
-          const fingerprint = thumbnailHash;
-          
-          postsWithHashes.push({
-            id: post.id,
-            thumbnailHash,
-            fingerprint,
-            caption,
-            timestamp: post.timestamp,
-            permalink: post.permalink
-          });
-        } catch (error) {
-          console.log(`⚠️ [HASH] Skipping post ${post.id} - hash generation failed:`, error.message);
-        }
-      }
-    }
+    // Process image: resize → grayscale → normalize → hash
+    const processedBuffer = await sharp(buffer)
+      .resize(64, 64) // Standardize size
+      .grayscale() // Remove color variations
+      .normalize() // Normalize brightness/contrast
+      .raw() // Get raw pixel data
+      .toBuffer();
     
-    console.log(`📱 [INSTAGRAM API] Generated hashes for ${postsWithHashes.length} video posts`);
-    console.log(`📊 [DEBUG] Instagram posts found: ${postsWithHashes.length} videos with fingerprints`);
-    return postsWithHashes;
+    // Generate hash from pixel data
+    const hash = crypto.createHash('md5').update(processedBuffer).digest('hex').substring(0, 8);
+    
+    console.log(`✅ [THUMBNAIL] Visual hash generated: ${hash}`);
+    return hash;
     
   } catch (error) {
-    console.error('❌ [INSTAGRAM API ERROR]', error);
-    return [];
-  }
-}
-
-/**
- * Get last 30 posted videos for platform (FALLBACK: Database method)
- * @param {string} platform - Platform name (instagram/youtube)
- * @param {Object} SchedulerQueueModel - Mongoose model for scheduler queue
- * @returns {Promise<Array>} Array of last 30 posted videos
- */
-async function getLast30PostedVideos(platform, SchedulerQueueModel) {
-  try {
-    console.log(`📚 [POST HISTORY] Getting last 30 posted videos for ${platform}`);
+    console.log(`❌ [THUMBNAIL] Visual analysis failed:`, error.message);
     
-    const postedVideos = await SchedulerQueueModel
-      .find({ 
-        platform: platform,
-        $or: [
-          { status: 'posted' },
-          { status: 'completed' } // Include old posts marked as 'completed' before the fix
-        ]
-      })
-      .sort({ postedAt: -1 }) // Most recent first
-      .limit(30)
-      .select('fingerprint thumbnailHash caption originalVideoId')
-      .exec();
-    
-    console.log(`📚 [POST HISTORY] Found ${postedVideos.length} posted videos`);
-    return postedVideos;
-    
-  } catch (error) {
-    console.error('❌ [POST HISTORY ERROR]', error);
-    return [];
-  }
-}
-
-/**
- * Check if video was already posted (by fingerprint)
- * @param {string} fingerprint - Video fingerprint
- * @param {Array} postedVideos - Array of posted videos
- * @returns {boolean} True if already posted
- */
-function isAlreadyPosted(fingerprint, postedVideos) {
-  return postedVideos.some(posted => posted.fingerprint === fingerprint);
-}
-
-/**
- * Check if video looks similar to recent posts
- * @param {Object} video - Video object with thumbnailHash and caption
- * @param {Array} postedVideos - Array of posted videos
- * @returns {boolean} True if looks similar
- */
-function looksSimilar(video, postedVideos) {
-  return postedVideos.some(posted => {
-    // ✅ PRIORITY CHECK: Visual thumbnail similarity (now robust to lighting changes)
-    if (posted.thumbnailHash === video.thumbnailHash) {
-      console.log(`🚫 [DUPLICATE] Visually similar thumbnail detected: ${video.id}`);
-      return true;
-    }
-    
-    // Check caption similarity (exact match for now)
-    if (posted.caption && video.caption && 
-        posted.caption.toLowerCase().trim() === video.caption.toLowerCase().trim()) {
-      console.log(`🚫 [DUPLICATE] Same caption detected: ${video.id}`);
-      return true;
-    }
-    
-    return false;
-  });
-}
-
-/**
- * Filter out duplicate and similar videos
- * @param {Array} scrapedVideos - Scraped videos array
- * @param {Array} postedVideos - Posted videos array
- * @returns {Array} Filtered unique videos
- */
-function filterUniqueVideos(scrapedVideos, postedVideos) {
-  console.log(`🔍 [FILTER] Filtering ${scrapedVideos.length} scraped videos against ${postedVideos.length} posted videos`);
-  
-  // Debug: Show fingerprints of posted videos
-  console.log(`📋 [DEBUG] Posted video fingerprints:`, postedVideos.map(p => p.fingerprint).slice(0, 5));
-  
-  const uniqueVideos = scrapedVideos.filter(video => {
-    console.log(`🧪 [DEBUG] Checking video ${video.id} with fingerprint: ${video.fingerprint}`);
-    
-    // Skip if already posted
-    if (isAlreadyPosted(video.fingerprint, postedVideos)) {
-      console.log(`⏭️ [FILTER] Skipping already posted: ${video.id} (fingerprint match)`);
-      return false;
-    }
-    
-    // Skip if looks similar
-    if (looksSimilar(video, postedVideos)) {
-      console.log(`⏭️ [FILTER] Skipping similar video: ${video.id} (visual similarity)`);
-      return false;
-    }
-    
-    console.log(`✅ [FILTER] Video ${video.id} is unique, adding to queue`);
-    return true;
-  });
-  
-  console.log(`✅ [FILTER] ${uniqueVideos.length} unique videos remaining`);
-  return uniqueVideos;
-}
-
-/**
- * Log posted video to history (called after successful post)
- * @param {Object} videoData - Posted video data
- * @param {Object} SchedulerQueueModel - Mongoose model
- * @returns {Promise<void>}
- */
-async function logPostedVideo(videoData, SchedulerQueueModel) {
-  try {
-    console.log('📝 [POST HISTORY] Logging posted video to history');
-    
-    await SchedulerQueueModel.updateOne(
-      { _id: videoData._id },
-      { 
-        $set: { 
-          status: 'posted',
-          postedAt: new Date(),
-          fingerprint: videoData.fingerprint,
-          thumbnailHash: videoData.thumbnailHash
-        }
-      }
-    );
-    
-    console.log('✅ [POST HISTORY] Video logged successfully');
-    
-  } catch (error) {
-    console.error('❌ [POST HISTORY LOG ERROR]', error);
+    // Fallback: URL-based hash
+    const fallbackHash = crypto.createHash('md5').update(thumbnailUrl).digest('hex').substring(0, 8);
+    console.log(`🔄 [THUMBNAIL] Using URL fallback hash: ${fallbackHash}`);
+    return fallbackHash;
   }
 }
 
 module.exports = {
-  getLast30InstagramPosts,
-  getLast30PostedVideos,
-  isAlreadyPosted,
-  looksSimilar,
-  filterUniqueVideos
+  generateThumbnailHash
 };
