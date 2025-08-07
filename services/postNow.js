@@ -103,17 +103,35 @@ async function executePostNow(settings) {
 
     const last30 = await fetchLast30InstagramPosts(settings); // [{ id, thumbnailUrl, caption, audioId, duration }]
     
-    // Build hashes without downloading media: lightweight deterministic hash from URL
-    const crypto = require('crypto');
-    const last30Hashes = last30.map((post) => {
-      const basis = (post.thumbnailUrl || post.url || '').toLowerCase();
-      return crypto.createHash('md5').update(basis).digest('hex').substring(0, 16);
-    });
+    // Build robust visual hashes for last 30 posts sequentially (thumbnail-based, low memory)
+    const { generateThumbnailHash } = require('../utils/instagramScraper');
+    const last30Hashes = [];
+    for (const post of last30) {
+      try {
+        const h = await generateThumbnailHash(post.thumbnailUrl || post.url || '');
+        last30Hashes.push(h);
+      } catch (e) {
+        console.warn('⚠️ [STEP 1] Thumbnail hash failed for past post, skipping:', e.message);
+      }
+    }
     
     const last30Captions = last30.map(p => p.caption);
     const last30Durations = last30.map(p => p.duration);
     const last30AudioIds = last30.map(p => p.audioId).filter(Boolean);
     const last30Ids = last30.map(p => p.id);
+
+    // Augment blacklist with last 30 successful posts from our DB (ActivityLog)
+    let last30DbIds = [];
+    try {
+      const recentDb = await ActivityLogModel.find({ platform: 'instagram', status: 'success' })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .lean();
+      last30DbIds = recentDb.map(x => x.originalVideoId).filter(Boolean);
+    } catch (e) {
+      console.warn('⚠️ [STEP 1] Could not read ActivityLog for last-30 IDs:', e.message);
+    }
+    const blockedIds = new Set([ ...last30Ids, ...last30DbIds ]);
 
     console.log(`✅ [STEP 1] Built blacklist: ${last30Hashes.length} hashes, ${last30Captions.length} captions, ${last30AudioIds.length} audio IDs`);
 
@@ -142,8 +160,8 @@ async function executePostNow(settings) {
     for (const video of candidates) {
       console.log(`🔍 Checking video ${video.id} (engagement: ${video.engagement})...`);
       
-      // ⛔ Skip if exact ID or duration already posted
-      if (last30Ids.includes(video.id)) {
+      // ⛔ Skip if exact ID already posted (from IG or DB logs)
+      if (blockedIds.has(video.id)) {
         console.log(`⛔ Skipping video ${video.id} - exact ID match`);
         continue;
       }
@@ -152,24 +170,21 @@ async function executePostNow(settings) {
         continue;
       }
 
-      // Download only when cheap checks pass; prefer lightweight hash first to avoid full video in memory
+      // Compute robust thumbnail visual hash for candidate (sequential; avoids full video download)
       let hash;
       try {
-        // Use deterministic lightweight hash (URL-based) to avoid image downloads
+        hash = await generateThumbnailHash(video.thumbnailUrl || video.url || '');
+      } catch (e) {
         const crypto = require('crypto');
-        const basis = (video.thumbnailUrl || video.url || '').toLowerCase();
-        hash = crypto.createHash('md5').update(basis).digest('hex').substring(0, 16);
-      } catch (_) {
-        const buffer = await downloadVideoBuffer(video.url);
-        const frame = await extractFirstFrame(buffer);
-        hash = await generateVisualHash(frame);
+        const fallback = (video.thumbnailUrl || video.url || '').toLowerCase();
+        hash = crypto.createHash('md5').update(fallback).digest('hex').substring(0, 16);
       }
 
       const isDuplicateVisual = last30Hashes.includes(hash);
       const isDuplicateCaption = last30Captions.some((c) => {
         const a = (video.caption || '').toLowerCase();
         const b = (c || '').toLowerCase();
-        return stringSimilarity.compareTwoStrings(a, b) > 0.9;
+        return stringSimilarity.compareTwoStrings(a, b) > 0.85;
       });
       const isDuplicateAudio = last30AudioIds.includes(video.audioId);
 
