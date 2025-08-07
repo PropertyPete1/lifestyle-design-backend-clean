@@ -220,6 +220,3 @@ module.exports = {
   postToYouTube,
   executeScheduledPost
 };
-  postToYouTube,
-  executeScheduledPost
-};
