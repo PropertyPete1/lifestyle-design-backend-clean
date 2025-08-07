@@ -45,11 +45,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'Missing S3 credentials' };
     }
     
-    // STEP 1: Scrape Instagram publicly for real view counts, then match with API
-    console.log('📱 [AUTOPILOT] Step 1: Scraping Lifestyle Design Realty Texas for real view counts...');
-    const { scrapePublicInstagramWithViews } = require('../utils/publicInstagramScraper');
-    const scrapedVideos = await scrapePublicInstagramWithViews(
-      'lifestyledesignrealtytexas', // Your Instagram handle
+    // STEP 1: Scrape Instagram videos using Graph API with engagement estimation
+    console.log('📱 [AUTOPILOT] Step 1: Scraping Instagram videos with smart engagement calculation...');
+    const { scrapeInstagramEngagement } = require('../utils/instagramScraper');
+    const scrapedVideos = await scrapeInstagramEngagement(
       settings.igBusinessId, 
       settings.instagramToken, 
       200

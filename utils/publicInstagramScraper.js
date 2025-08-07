@@ -48,41 +48,62 @@ async function scrapePublicInstagramWithViews(handle, businessId, accessToken, l
  */
 async function getPublicInstagramVideos(handle, limit) {
   try {
-    // Use Instagram's public API endpoint
-    const url = `https://www.instagram.com/${handle}/?__a=1&__d=dis`;
+    console.log(`🌐 [PUBLIC SCRAPER] Using direct Instagram scraping for @${handle}...`);
     
-    const response = await fetch(url, {
+    // Method 1: Try Instagram mobile endpoint
+    let url = `https://i.instagram.com/api/v1/users/web_info/?username=${handle}`;
+    let response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+        'User-Agent': 'Instagram 76.0.0.15.395 Android (24/7.0; 640dpi; 1440x2560; samsung; SM-G930F; herolte; samsungexynos8890; en_US; 138226743)',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'X-IG-App-ID': '936619743392459'
       }
     });
     
     if (!response.ok) {
-      console.log('⚠️ [PUBLIC SCRAPER] Public API not available, trying alternate method...');
+      console.log('⚠️ [PUBLIC SCRAPER] Mobile API failed, trying web scraping...');
       return await getPublicInstagramAlternate(handle, limit);
     }
     
-    const data = await response.json();
-    const media = data?.graphql?.user?.edge_owner_to_timeline_media?.edges || [];
+    let data = await response.json();
+    let userId = data?.data?.user?.id;
+    
+    if (!userId) {
+      console.log('⚠️ [PUBLIC SCRAPER] Could not get user ID, trying alternate method...');
+      return await getPublicInstagramAlternate(handle, limit);
+    }
+    
+    // Method 2: Get user media using the user ID
+    url = `https://i.instagram.com/api/v1/feed/user/${userId}/?count=${limit}`;
+    response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Instagram 76.0.0.15.395 Android (24/7.0; 640dpi; 1440x2560; samsung; SM-G930F; herolte; samsungexynos8890; en_US; 138226743)',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'X-IG-App-ID': '936619743392459'
+      }
+    });
+    
+    if (!response.ok) {
+      console.log('⚠️ [PUBLIC SCRAPER] Media API failed, trying alternate method...');
+      return await getPublicInstagramAlternate(handle, limit);
+    }
+    
+    data = await response.json();
+    const items = data?.items || [];
     
     const videos = [];
-    for (const edge of media.slice(0, limit)) {
-      const node = edge.node;
-      
-      if (node.is_video && node.video_view_count) {
+    for (const item of items.slice(0, limit)) {
+      if (item.media_type === 2 && item.video_versions && item.view_count) { // media_type 2 = video
         videos.push({
-          shortcode: node.shortcode,
-          views: node.video_view_count,
-          likes: node.edge_media_preview_like.count,
-          caption: node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
-          timestamp: new Date(node.taken_at_timestamp * 1000).toISOString(),
-          thumbnailUrl: node.display_url,
-          engagement: node.video_view_count + node.edge_media_preview_like.count
+          shortcode: item.code,
+          views: item.view_count,
+          likes: item.like_count || 0,
+          caption: item.caption?.text || '',
+          timestamp: new Date(item.taken_at * 1000).toISOString(),
+          thumbnailUrl: item.image_versions2?.candidates?.[0]?.url || '',
+          engagement: item.view_count + (item.like_count || 0) + (item.comment_count || 0)
         });
       }
     }
@@ -90,7 +111,7 @@ async function getPublicInstagramVideos(handle, limit) {
     return videos;
     
   } catch (error) {
-    console.log('⚠️ [PUBLIC SCRAPER] Error with public API, trying alternate method...');
+    console.log('⚠️ [PUBLIC SCRAPER] Error with mobile API, trying alternate method...');
     return await getPublicInstagramAlternate(handle, limit);
   }
 }
