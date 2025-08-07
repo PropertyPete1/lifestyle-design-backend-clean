@@ -571,64 +571,148 @@ app.get('/api/test/youtube', async (req, res) => {
   }
 });
 
-// POST NOW - New endpoint with exact filtering specification
+// POST NOW - Fixed visual hash saving & filtering to prevent reposts
 app.post('/api/postNow', async (req, res) => {
   try {
-    console.log("📲 [POST NOW] Starting...");
+    console.log("📲 [POST NOW] Starting with fixed hash filtering...");
 
     const settings = await SettingsModel.findOne({});
+    if (!settings || !settings.instagramToken || !settings.igBusinessId) {
+      return res.status(400).json({ error: 'Missing Instagram credentials in settings' });
+    }
     
     // Import required functions
-    const { fetchRecentInstagramVideos, downloadInstagramVideo } = require('./utils/instagramScraper');
-    const { getLast30ThumbnailHashes, logPostedHash } = require('./utils/repostProtector');
+    const { scrapeInstagramEngagement } = require('./utils/instagramScraper');
     const { uploadBufferToS3 } = require('./utils/s3Uploader');
     const { extractFirstFrameHash } = require('./utils/fingerprint');
     const { postToInstagram } = require('./services/instagramPoster');
     const { postToYouTube } = require('./services/youtubePoster');
+    const fetch = require('node-fetch');
     
-    const recentHashes = await getLast30ThumbnailHashes(); // 👈 pulls 30 most recent posts
+    // ✅ STEP 1: Get last 30 most recent posts with correct hash filtering
+    const SchedulerQueueModel = mongoose.model('SchedulerQueue', new mongoose.Schema({
+      platform: String,
+      source: String,
+      originalVideoId: String,
+      videoUrl: String,
+      thumbnailUrl: String,
+      thumbnailHash: String, // ✅ This is the visual fingerprint
+      caption: String,
+      engagement: Number,
+      createdAt: { type: Date, default: Date.now },
+      postedAt: { type: Date, default: Date.now },
+      status: { type: String, default: 'posted' }
+    }, { timestamps: true }), 'schedulerqueue');
 
-    const candidates = await fetchRecentInstagramVideos(); // top 500 scraped videos
+    const last30Posts = await SchedulerQueueModel.find({ 
+      platform: "instagram",
+      status: "posted" 
+    })
+    .sort({ postedAt: -1 }) // ✅ Must be sorted by most recent
+    .limit(30)
+    .select("thumbnailHash originalVideoId");
 
+    const recentHashes = last30Posts.map(post => post.thumbnailHash).filter(Boolean);
+    const recentVideoIds = last30Posts.map(post => post.originalVideoId).filter(Boolean);
+    
+    console.log(`🛡️ [POST NOW] Found ${last30Posts.length} recent posts`);
+    console.log(`📸 [DEBUG] Recent thumbnail hashes: ${recentHashes.length}`);
+    console.log(`🎬 [DEBUG] Recent video IDs: ${recentVideoIds.length}`);
+
+    // ✅ STEP 2: Scrape 500 videos from Instagram
+    const candidates = await scrapeInstagramEngagement(
+      settings.igBusinessId,
+      settings.instagramToken,
+      500
+    );
+    
+    if (candidates.length === 0) {
+      return res.status(404).json({ error: 'No videos found to analyze' });
+    }
+
+    console.log(`✅ [POST NOW] Found ${candidates.length} videos to analyze`);
+
+    // ✅ STEP 3: Find first unique video with proper hash checking
     for (const video of candidates) {
-      const buffer = await downloadInstagramVideo(video.videoUrl);
-      const visualHash = await extractFirstFrameHash(buffer);
-
-      if (recentHashes.includes(visualHash)) {
-        console.log(`⚠️ Skipping duplicate video hash: ${visualHash}`);
+      console.log(`🔍 [POST NOW] Checking video ${video.id}...`);
+      
+      // ✅ STEP 3A: Check if video ID was already posted
+      if (recentVideoIds.includes(video.id)) {
+        console.log(`🚫 [POST NOW] Rejected duplicate video ID: ${video.id}`);
         continue;
       }
 
-      // ✅ Upload to S3
-      const s3Key = `postNow/instagram/${video.id}_${visualHash}.mp4`;
-      const s3Url = await uploadBufferToS3(buffer, s3Key, "video/mp4");
+      // ✅ STEP 3B: Download video and generate visual hash
+      const response = await fetch(video.url);
+      const buffer = await response.buffer();
+      const visualHash = await extractFirstFrameHash(buffer);
 
-      // ✅ Post to Instagram
-      await postToInstagram({
+      console.log(`📸 [DEBUG] Comparing candidate hash: ${visualHash.substring(0, 12)}...`);
+      console.log(`🧠 [DEBUG] Against ${recentHashes.length} recent hashes`);
+
+      // ✅ STEP 3C: Check if visual hash matches any recent post
+      const isDuplicate = recentHashes.includes(visualHash);
+      if (isDuplicate) {
+        console.log(`🚫 [POST NOW] Rejected duplicate hash (matched last 30): ${visualHash.substring(0, 12)}...`);
+        continue;
+      }
+
+      console.log(`✅ [POST NOW] Found unique video! Hash: ${visualHash.substring(0, 12)}...`);
+
+      // ✅ STEP 4: Upload to S3
+      const s3Key = `postNow/instagram/${video.id}_${visualHash.substring(0, 8)}.mp4`;
+      const s3Url = await uploadBufferToS3(buffer, s3Key, "video/mp4");
+      console.log(`☁️ [POST NOW] S3 upload successful: ${s3Url}`);
+
+      // ✅ STEP 5: Post to Instagram
+      const instagramResult = await postToInstagram({
         videoUrl: s3Url,
-        caption: video.caption,
+        caption: video.caption || 'Posted via Post Now',
         thumbnailHash: visualHash,
         source: "postNow"
       });
 
-      // ✅ Post to YouTube if enabled
+      if (!instagramResult.success) {
+        console.log('❌ [POST NOW] Instagram posting failed:', instagramResult.error);
+        continue; // Try next video
+      }
+
+      // ✅ STEP 6: Post to YouTube if enabled
+      let youtubeResult = { success: true };
       if (settings.autoPostToYouTube) {
-        await postToYouTube({
+        youtubeResult = await postToYouTube({
           videoUrl: s3Url,
-          caption: video.caption,
+          caption: video.caption || 'Posted via Post Now',
           thumbnailHash: visualHash,
           source: "postNow"
         });
       }
 
-      // ✅ Log hash to prevent future repost
-      await logPostedHash(visualHash);
+      // ✅ STEP 7: Save to database with correct hash for future filtering
+      await SchedulerQueueModel.create({
+        platform: "instagram",
+        source: "manual",
+        originalVideoId: video.id,
+        videoUrl: s3Url,
+        thumbnailUrl: s3Url,
+        thumbnailHash: visualHash, // ✅ Make sure this is saved!
+        caption: video.caption || 'Posted via Post Now',
+        engagement: video.engagement || 0,
+        createdAt: new Date(),
+        postedAt: new Date(),
+        status: 'posted'
+      });
 
+      console.log(`💾 [POST NOW] Saved hash ${visualHash.substring(0, 12)}... for future duplicate prevention`);
+
+      const platforms = settings.autoPostToYouTube ? 'Instagram + YouTube' : 'Instagram';
       return res.status(200).json({
-        status: "✅ Posted",
-        platform: settings.autoPostToYouTube ? "Instagram + YouTube" : "Instagram",
-        thumbnailHash: visualHash,
-        s3Url
+        success: true,
+        status: "✅ Posted successfully",
+        platform: platforms,
+        thumbnailHash: visualHash.substring(0, 12) + '...',
+        s3Url: s3Url,
+        videoId: video.id
       });
     }
 
@@ -636,7 +720,7 @@ app.post('/api/postNow', async (req, res) => {
 
   } catch (err) {
     console.error("❌ [POST NOW ERROR]", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error", details: err.message });
   }
 });
 
