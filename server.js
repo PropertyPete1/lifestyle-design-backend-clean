@@ -59,7 +59,14 @@ const schedulerQueueSchema = new mongoose.Schema({
   insertedAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  // Thumbnail and video URLs for display
+  thumbnailUrl: String, // Original Instagram thumbnail URL
+  thumbnailPath: String, // Extracted thumbnail path
+  s3Url: String, // S3 video URL
+  thumbnailHash: String, // For duplicate detection
+  engagement: Number, // Original engagement metrics
+  originalVideoId: String // For tracking original content
 }, { timestamps: true });
 
 const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
