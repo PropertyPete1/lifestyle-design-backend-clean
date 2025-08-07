@@ -179,6 +179,47 @@ async function postToInstagram(postData, settings) {
 }
 
 /**
+ * Refresh YouTube access token using refresh token
+ * @param {Object} settings - User settings with tokens
+ * @returns {Promise<string>} New access token
+ */
+async function refreshYouTubeToken(settings) {
+  try {
+    console.log('🔄 [YOUTUBE AUTH] Refreshing access token...');
+    
+    if (!settings.youtubeRefreshToken || !settings.youtubeClientId || !settings.youtubeClientSecret) {
+      throw new Error('Missing YouTube refresh credentials');
+    }
+    
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: settings.youtubeClientId,
+        client_secret: settings.youtubeClientSecret,
+        refresh_token: settings.youtubeRefreshToken,
+        grant_type: 'refresh_token'
+      })
+    });
+    
+    const tokenData = await tokenResponse.json();
+    
+    if (!tokenResponse.ok) {
+      throw new Error(`Token refresh failed: ${tokenData.error_description || tokenData.error}`);
+    }
+    
+    console.log('✅ [YOUTUBE AUTH] Token refreshed successfully');
+    return tokenData.access_token;
+    
+  } catch (error) {
+    console.error('❌ [YOUTUBE AUTH] Token refresh error:', error);
+    throw error;
+  }
+}
+
+/**
  * Post video to YouTube using YouTube Data API
  * @param {Object} postData - Post data from queue
  * @param {Object} settings - User settings with tokens
@@ -188,8 +229,20 @@ async function postToYouTube(postData, settings) {
   try {
     console.log('📺 [YOUTUBE POST] Starting YouTube upload...');
     
-    if (!settings.youtubeAccessToken) {
+    if (!settings.youtubeRefreshToken || !settings.youtubeClientId || !settings.youtubeClientSecret) {
       throw new Error('Missing YouTube credentials');
+    }
+    
+    // Always refresh token to ensure it's valid
+    const freshAccessToken = await refreshYouTubeToken(settings);
+    
+    // Optionally save the new token back to settings (for efficiency in future calls)
+    try {
+      const SettingsModel = require('mongoose').model('SettingsClean');
+      await SettingsModel.updateOne({}, { youtubeAccessToken: freshAccessToken });
+      console.log('💾 [YOUTUBE AUTH] Updated access token in database');
+    } catch (saveError) {
+      console.log('⚠️ [YOUTUBE AUTH] Could not save token to database (not critical):', saveError.message);
     }
     
     // ✅ Extract data from Mongoose document (handle both plain objects and Mongoose docs)
@@ -223,7 +276,7 @@ async function postToYouTube(postData, settings) {
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${settings.youtubeAccessToken}`,
+          'Authorization': `Bearer ${freshAccessToken}`,
           ...formData.getHeaders()
         },
         body: formData
@@ -300,5 +353,6 @@ async function executeScheduledPost(queueItem, settings) {
 module.exports = {
   postToInstagram,
   postToYouTube,
-  executeScheduledPost
+  executeScheduledPost,
+  refreshYouTubeToken
 };
