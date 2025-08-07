@@ -18,7 +18,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
     console.log(`🕷️ [IG SCRAPER] Scraping ${limit} videos for engagement data`);
     
     const videos = [];
-    let nextPageUrl = `https://graph.facebook.com/v19.0/${businessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,play_count,timestamp,permalink&limit=50&access_token=${accessToken}`;
+    let nextPageUrl = `https://graph.facebook.com/v19.0/${businessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,play_count,timestamp,permalink,music_metadata&limit=50&access_token=${accessToken}`;
     
     while (videos.length < limit && nextPageUrl) {
       console.log(`🔍 [IG SCRAPER] Fetching page... (${videos.length}/${limit})`);
@@ -46,7 +46,13 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
             console.log(`📊 [DEBUG] Video ${videos.length + 1}: ${likes} likes, ${comments} comments, ${estimatedViews} est. views, ${engagement} engagement`);
           }
           
-          videos.push({
+          // Extract audio ID from music metadata (Instagram saves audio info here)
+          const audioId = media.music_metadata?.music_product_id || 
+                         media.music_metadata?.artist_name || 
+                         media.music_metadata?.song_name || 
+                         null;
+          
+          const videoObject = {
             id: media.id,
             url: media.media_url,
             thumbnailUrl: media.thumbnail_url,
@@ -57,9 +63,18 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
             engagement: engagement,
             timestamp: media.timestamp,
             permalink: media.permalink,
+            audioId: audioId, // NEW: Audio ID for duplicate detection
+            musicMetadata: media.music_metadata || null, // Store full metadata for debugging
             thumbnailHash: await generateThumbnailHash(media.thumbnail_url),
             fingerprint: await generateThumbnailHash(media.thumbnail_url) // Use visual hash as fingerprint
-          });
+          };
+          
+          // Log audio info for first few videos (debugging)
+          if (videos.length < 5 && audioId) {
+            console.log(`🎵 [AUDIO DEBUG] Video ${videos.length + 1}: audioId="${audioId}"`);
+          }
+          
+          videos.push(videoObject);
         }
       }
       

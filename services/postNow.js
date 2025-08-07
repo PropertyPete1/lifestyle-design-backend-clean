@@ -131,6 +131,7 @@ async function executePostNow(settings) {
         videoUrl: String,
         thumbnailUrl: String,
         thumbnailHash: String,
+        audioId: String, // NEW: Audio ID for duplicate detection
         caption: String,
         engagement: Number,
         createdAt: { type: Date, default: Date.now },
@@ -151,6 +152,9 @@ async function executePostNow(settings) {
     const validHashes = [];
     const recentCaptions = [];
     
+    // Collect recent audio IDs for duplicate detection
+    const recentAudioIds = [];
+    
     // Process posts sequentially to avoid memory overload
     for (let i = 0; i < recentInstagramPosts.length; i++) {
       const post = recentInstagramPosts[i];
@@ -160,6 +164,13 @@ async function executePostNow(settings) {
         const hash = await generateVisualHash(buffer);
         validHashes.push(hash);
         recentCaptions.push(post.caption || "");
+        
+        // NEW: Collect audio ID if available
+        if (post.audioId) {
+          recentAudioIds.push(post.audioId);
+          console.log(`🎵 [YOUR POST] Audio: ${post.audioId.substring(0, 20)}...`);
+        }
+        
         console.log(`✅ [YOUR POST] Hash: ${hash.substring(0, 12)}... (${validHashes.length} processed)`);
         
         // Clear buffer from memory immediately
@@ -167,6 +178,10 @@ async function executePostNow(settings) {
       } catch (error) {
         console.warn(`⚠️ [HASH] Failed to generate hash for post ${post.id}: ${error.message}`);
         recentCaptions.push(post.caption || "");
+        // Still collect audio ID even if hash fails
+        if (post.audioId) {
+          recentAudioIds.push(post.audioId);
+        }
       }
       
       // Force garbage collection hint every 5 posts
@@ -177,6 +192,7 @@ async function executePostNow(settings) {
     
     console.log(`✅ [STEP 1] Generated ${validHashes.length} hashes from your posts`);
     console.log(`✅ [STEP 1] Collected ${recentCaptions.length} captions for similarity checking`);
+    console.log(`🎵 [STEP 1] Collected ${recentAudioIds.length} audio IDs for duplicate detection`);
     logMemoryUsage('AFTER_STEP_1');
 
     // --------------------------------------------
@@ -214,6 +230,7 @@ async function executePostNow(settings) {
 
         console.log(`📸 [HASH CHECK] Video hash: ${hash.substring(0, 12)}...`);
         
+        // 3-LAYER DUPLICATE DETECTION
         const isHashDuplicate = validHashes.includes(hash);
         console.log(`📸 [HASH CHECK] Duplicate: ${isHashDuplicate}`);
 
@@ -223,8 +240,13 @@ async function executePostNow(settings) {
         });
         console.log(`📝 [CAPTION CHECK] Duplicate: ${isCaptionDuplicate}`);
 
-        if (isHashDuplicate || isCaptionDuplicate) {
-          console.log(`🚫 [DUPLICATE] Skipping ${video.id} - duplicate by hash or caption`);
+        // NEW: Audio ID duplicate check
+        const isAudioDuplicate = video.audioId && recentAudioIds.includes(video.audioId);
+        console.log(`🎵 [AUDIO CHECK] Video audioId: ${video.audioId || 'none'}`);
+        console.log(`🎵 [AUDIO CHECK] Duplicate: ${isAudioDuplicate}`);
+
+        if (isHashDuplicate || isCaptionDuplicate || isAudioDuplicate) {
+          console.log(`🚫 [DUPLICATE] Skipping ${video.id} - [Hash:${isHashDuplicate} | Caption:${isCaptionDuplicate} | Audio:${isAudioDuplicate}]`);
           // Clear temp buffer immediately for rejected videos
           if (tempBuffer) {
             tempBuffer.fill(0);
@@ -339,11 +361,16 @@ async function executePostNow(settings) {
       videoUrl: s3Url,
       thumbnailUrl: s3Url,
       thumbnailHash: selectedHash,
+      audioId: selectedVideo.audioId || null, // NEW: Store audio ID for future duplicate detection
       caption: finalCaption,
       engagement: selectedVideo.engagement,
       postedAt: new Date(),
       status: 'posted'
     });
+    
+    if (selectedVideo.audioId) {
+      console.log(`🎵 [STEP 8] Logged audio ID: ${selectedVideo.audioId}`);
+    }
 
     console.log("✅ [POST NOW] Unique video posted to Instagram successfully with clean step-by-step flow");
 
@@ -369,12 +396,18 @@ async function executePostNow(settings) {
 
     return {
       success: true,
-      status: "✅ Posted successfully",
+      status: "✅ Posted successfully with 3-layer duplicate protection",
       platform: settings.autoPostToYouTube ? "Instagram + YouTube" : "Instagram",
       thumbnailHash: selectedHash.substring(0, 12) + '...',
+      audioId: selectedVideo.audioId ? selectedVideo.audioId.substring(0, 20) + '...' : 'none',
       s3Url: s3Url,
       videoId: selectedVideo.id,
-      caption: finalCaption.substring(0, 100) + '...'
+      caption: finalCaption.substring(0, 100) + '...',
+      duplicateProtection: {
+        visualHash: true,
+        captionSimilarity: true,
+        audioId: !!selectedVideo.audioId
+      }
     };
 
   } catch (error) {
