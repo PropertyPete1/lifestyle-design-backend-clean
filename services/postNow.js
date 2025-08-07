@@ -103,18 +103,12 @@ async function executePostNow(settings) {
 
     const last30 = await fetchLast30InstagramPosts(settings); // [{ id, thumbnailUrl, caption, audioId, duration }]
     
-    // Build hashes strictly sequentially to minimize memory and avoid bursts
-    const last30Hashes = [];
-    for (const post of last30) {
-      try {
-        const buffer = await downloadVideoBuffer(post.url);
-        const frame = await extractFirstFrame(buffer);
-        const h = await generateVisualHash(frame);
-        last30Hashes.push(h);
-      } catch (e) {
-        console.warn('⚠️ [STEP 1] Could not hash past post, skipping:', e.message);
-      }
-    }
+    // Build hashes without downloading media: lightweight deterministic hash from URL
+    const crypto = require('crypto');
+    const last30Hashes = last30.map((post) => {
+      const basis = (post.thumbnailUrl || post.url || '').toLowerCase();
+      return crypto.createHash('md5').update(basis).digest('hex').substring(0, 16);
+    });
     
     const last30Captions = last30.map(p => p.caption);
     const last30Durations = last30.map(p => p.duration);
