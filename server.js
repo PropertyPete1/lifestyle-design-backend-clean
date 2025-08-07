@@ -64,6 +64,22 @@ const schedulerQueueSchema = new mongoose.Schema({
 
 const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
 
+// ✅ Daily limit check function
+async function hasReachedDailyLimit(date, platform, maxPerDay) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+
+  const count = await SchedulerQueueModel.countDocuments({
+    platform,
+    scheduledTime: { $gte: start, $lte: end }
+  });
+
+  return count >= maxPerDay;
+}
+
 // CORS configuration for frontend-v2
 app.use(cors({
   origin: [
@@ -323,6 +339,15 @@ app.post('/api/autopilot/run', async (req, res) => {
         
         for (const platform of platforms) {
           const scheduledTime = getRandomPostTime(i);
+          
+          // ✅ Check daily limit before scheduling
+          const dateStr = scheduledTime.toISOString().split('T')[0];
+          const hasReachedLimit = await hasReachedDailyLimit(dateStr, platform, settings.maxPosts);
+          
+          if (hasReachedLimit) {
+            console.log(`⚠️ [AUTOPILOT] Daily limit reached for ${platform} on ${dateStr}. Skipping.`);
+            continue;
+          }
           
           const queueEntry = new SchedulerQueueModel({
             filename: s3Key,
