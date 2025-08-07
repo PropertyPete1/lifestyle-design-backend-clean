@@ -6,7 +6,7 @@
 const { uploadBufferToS3, generateS3Key } = require('../utils/s3Uploader');
 const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartScheduler');
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
-const { getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
+const { getLast30InstagramPosts, getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
 const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
 const { extractFirstFrame } = require('../utils/thumbnailExtractor');
 
@@ -64,9 +64,9 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No high-engagement videos found' };
     }
     
-    // STEP 3: Get last 30 posted videos to avoid duplicates
-    console.log('📚 [AUTOPILOT] Step 3: Checking post history...');
-    const last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
+    console.log('📱 [AUTOPILOT] Step 3: Checking your actual Instagram posts...');
+    const last30Posted = await getLast30InstagramPosts(settings);
     
     // STEP 4: Filter out duplicates and similar videos
     console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates...');
@@ -288,7 +288,7 @@ module.exports = {
 const { uploadBufferToS3, generateS3Key } = require('../utils/s3Uploader');
 const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartScheduler');
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
-const { getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
+const { getLast30InstagramPosts, getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
 const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
 const { extractFirstFrame } = require('../utils/thumbnailExtractor');
 
@@ -346,9 +346,9 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No high-engagement videos found' };
     }
     
-    // STEP 3: Get last 30 posted videos to avoid duplicates
-    console.log('📚 [AUTOPILOT] Step 3: Checking post history...');
-    const last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
+    console.log('📱 [AUTOPILOT] Step 3: Checking your actual Instagram posts...');
+    const last30Posted = await getLast30InstagramPosts(settings);
     
     // STEP 4: Filter out duplicates and similar videos
     console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates...');

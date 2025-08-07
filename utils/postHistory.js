@@ -1,10 +1,62 @@
 /**
  * Post History Utility - Track posted videos to avoid duplicates
- * Maintains history of last 30 posted videos per platform
+ * Fetches last 30 posts directly from Instagram API for accurate duplicate detection
  */
 
+const fetch = require('node-fetch');
+const { generateThumbnailHash } = require('./instagramScraper');
+
 /**
- * Get last 30 posted videos for platform
+ * Get last 30 posted videos directly from Instagram API
+ * @param {Object} settings - User settings with Instagram credentials
+ * @returns {Promise<Array>} Array of last 30 Instagram posts with visual hashes
+ */
+async function getLast30InstagramPosts(settings) {
+  try {
+    console.log(`📱 [INSTAGRAM API] Fetching last 30 posts from your Instagram account...`);
+    
+    const mediaUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,permalink&limit=30&access_token=${settings.instagramToken}`;
+    
+    const response = await fetch(mediaUrl);
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.error('❌ [INSTAGRAM API] Error:', data);
+      return [];
+    }
+    
+    console.log(`📱 [INSTAGRAM API] Found ${data.data.length} recent posts`);
+    
+    // Generate visual hashes for each post
+    const postsWithHashes = [];
+    for (const post of data.data) {
+      if (post.media_type === 'VIDEO' && post.thumbnail_url) {
+        try {
+          const thumbnailHash = await generateThumbnailHash(post.thumbnail_url);
+          postsWithHashes.push({
+            id: post.id,
+            thumbnailHash,
+            caption: post.caption || '',
+            timestamp: post.timestamp,
+            permalink: post.permalink
+          });
+        } catch (error) {
+          console.log(`⚠️ [HASH] Skipping post ${post.id} - hash generation failed:`, error.message);
+        }
+      }
+    }
+    
+    console.log(`📱 [INSTAGRAM API] Generated hashes for ${postsWithHashes.length} video posts`);
+    return postsWithHashes;
+    
+  } catch (error) {
+    console.error('❌ [INSTAGRAM API ERROR]', error);
+    return [];
+  }
+}
+
+/**
+ * Get last 30 posted videos for platform (FALLBACK: Database method)
  * @param {string} platform - Platform name (instagram/youtube)
  * @param {Object} SchedulerQueueModel - Mongoose model for scheduler queue
  * @returns {Promise<Array>} Array of last 30 posted videos
@@ -129,7 +181,9 @@ async function logPostedVideo(videoData, SchedulerQueueModel) {
 }
 
 module.exports = {
+  getLast30InstagramPosts,
   getLast30PostedVideos,
   isAlreadyPosted,
   looksSimilar,
+  filterUniqueVideos
 };
