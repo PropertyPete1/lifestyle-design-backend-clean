@@ -144,19 +144,25 @@ function looksSimilar(video, postedVideos) {
 function filterUniqueVideos(scrapedVideos, postedVideos) {
   console.log(`🔍 [FILTER] Filtering ${scrapedVideos.length} scraped videos against ${postedVideos.length} posted videos`);
   
+  // Debug: Show fingerprints of posted videos
+  console.log(`📋 [DEBUG] Posted video fingerprints:`, postedVideos.map(p => p.fingerprint).slice(0, 5));
+  
   const uniqueVideos = scrapedVideos.filter(video => {
+    console.log(`🧪 [DEBUG] Checking video ${video.id} with fingerprint: ${video.fingerprint}`);
+    
     // Skip if already posted
     if (isAlreadyPosted(video.fingerprint, postedVideos)) {
-      console.log(`⏭️ [FILTER] Skipping already posted: ${video.id}`);
+      console.log(`⏭️ [FILTER] Skipping already posted: ${video.id} (fingerprint match)`);
       return false;
     }
     
     // Skip if looks similar
     if (looksSimilar(video, postedVideos)) {
-      console.log(`⏭️ [FILTER] Skipping similar video: ${video.id}`);
+      console.log(`⏭️ [FILTER] Skipping similar video: ${video.id} (visual similarity)`);
       return false;
     }
     
+    console.log(`✅ [FILTER] Video ${video.id} is unique, adding to queue`);
     return true;
   });
   
