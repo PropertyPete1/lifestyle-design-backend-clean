@@ -234,6 +234,20 @@ app.get('/api/analytics', async (req, res) => {
   }
 });
 
+// Missing API endpoints that frontend is calling
+app.get('/api/chart/status', (req, res) => {
+  res.json({ status: 'active', charts: ['engagement', 'reach'] });
+});
+
+app.get('/api/activity/feed', (req, res) => {
+  const { platform, limit = 10 } = req.query;
+  res.json({ activities: [], total: 0, platform });
+});
+
+app.get('/api/events/recent', (req, res) => {
+  res.json({ events: [], lastUpdated: new Date().toISOString() });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
