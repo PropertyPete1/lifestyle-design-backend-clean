@@ -90,7 +90,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
     
   } catch (error) {
     console.error('❌ [IG SCRAPER ERROR]', error);
-    return [];
+    throw error; // ✅ THROW ERROR instead of returning empty array
   }
 }
 
