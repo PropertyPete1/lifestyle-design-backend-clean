@@ -74,75 +74,69 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No high-engagement videos found' };
     }
     
-    // STEP 3: Get last 15 posts from your actual Instagram feed to avoid reposting recent content
-    console.log('🔍 [AUTOPILOT] Step 3: Checking last 15 posts from your Instagram feed...');
-    let recentPostHashes = new Set();
+    // STEP 3: Get thumbnailHashes of last 30 posted videos from database
+    console.log('🔍 [AUTOPILOT] Step 3: Checking last 30 posted videos from database...');
+    const last30Posts = await SchedulerQueueModel.find({ 
+      platform: "instagram",
+      status: "posted" 
+    })
+    .sort({ postedAt: -1 })
+    .limit(30)
+    .select("thumbnailHash");
+
+    const recentThumbs = new Set(last30Posts.map(post => post.thumbnailHash).filter(hash => hash));
+    console.log(`🛡️ [RECENT POSTS] ${recentThumbs.size} recent post hashes to avoid (last 30 posted)`);
+
+    // STEP 4: Get current queue to avoid duplicates already scheduled
+    console.log('🔍 [AUTOPILOT] Step 4: Checking current queue for duplicates...');
+    const currentQueue = await SchedulerQueueModel.find({
+      platform: "instagram",
+      status: { $in: ["pending"] }
+    }).select("thumbnailHash");
+
+    const queueThumbs = new Set(currentQueue.map(post => post.thumbnailHash).filter(hash => hash));
+    console.log(`📋 [QUEUE CHECK] ${queueThumbs.size} videos already in queue to avoid`);
+
+    // STEP 5: Filter scraped videos using enhanced duplicate prevention
+    console.log('🔍 [AUTOPILOT] Step 5: Filtering videos using enhanced duplicate prevention...');
+    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos against database and queue...`);
     
-    try {
-      // Fetch last 15 posts from your Instagram account using Graph API
-      const instagramUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,thumbnail_url,timestamp&limit=15&access_token=${settings.instagramToken}`;
-      const fetch = require('node-fetch');
-      const response = await fetch(instagramUrl);
-      
-      if (response.ok) {
-        const data = await response.json();
-        const recentPosts = data.data || [];
-        
-        console.log(`📱 [INSTAGRAM API] Found ${recentPosts.length} recent posts from your Instagram`);
-        
-        // Generate hashes for recent posts to compare against
-        const { generateThumbnailHash } = require('../utils/postHistory');
-        for (const post of recentPosts) {
-          if (post.thumbnail_url) {
-            const hash = await generateThumbnailHash(post.thumbnail_url);
-            recentPostHashes.add(hash);
-            console.log(`📱 [RECENT POST] Hash: ${hash} for post ${post.id}`);
-          }
-        }
-        
-        console.log(`🛡️ [RECENT POSTS] ${recentPostHashes.size} recent post hashes to avoid (last 15 posts)`);
-      } else {
-        const errorText = await response.text();
-        console.log(`⚠️ [INSTAGRAM API] Failed to fetch recent posts: ${response.status} - ${errorText}`);
-        console.log('⚠️ [INSTAGRAM API] Proceeding without recent post filtering');
-      }
-    } catch (error) {
-      console.log('⚠️ [INSTAGRAM API] Error fetching recent posts:', error.message);
-    }
-    
-    // STEP 4: Filter out videos that match recent posts AND remove duplicates within current batch
-    console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates using visual thumbnail analysis...');
-    const seenHashes = new Set();
-    const uniqueVideos = [];
-    
-    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos against recent posts and duplicates...`);
-    
-    for (const video of qualifiedVideos) {
-      // Check if this video was recently posted
-      if (recentPostHashes.has(video.thumbnailHash)) {
-        console.log(`🚫 [RECENT POST FILTER] Skipping recently posted video: ${video.id} (hash: ${video.thumbnailHash})`);
-        continue;
+    const uniqueVideos = qualifiedVideos.filter(v => {
+      // Must have engagement threshold (already filtered but double-check)
+      if (v.engagement < 10000) {
+        return false;
       }
       
-      // Check for duplicates within current batch
-      if (seenHashes.has(video.thumbnailHash)) {
-        console.log(`⏭️ [THUMBNAIL FILTER] Skipping duplicate thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
-        continue;
+      // Must have thumbnail hash
+      if (!v.thumbnailHash) {
+        console.log(`⚠️ [THUMBNAIL FILTER] Skipping video without hash: ${v.id}`);
+        return false;
       }
       
-      seenHashes.add(video.thumbnailHash);
-      uniqueVideos.push(video);
-      console.log(`✅ [THUMBNAIL FILTER] Unique video (not in recent 15): ${video.id} (hash: ${video.thumbnailHash})`);
-    }
+      // Skip if in recent 30 posted videos
+      if (recentThumbs.has(v.thumbnailHash)) {
+        console.log(`🚫 [RECENT POST FILTER] Skipping recently posted video: ${v.id} (hash: ${v.thumbnailHash})`);
+        return false;
+      }
+      
+      // Skip if already in current queue
+      if (queueThumbs.has(v.thumbnailHash)) {
+        console.log(`📋 [QUEUE FILTER] Skipping already queued video: ${v.id} (hash: ${v.thumbnailHash})`);
+        return false;
+      }
+      
+      console.log(`✅ [THUMBNAIL FILTER] Eligible video: ${v.id} (hash: ${v.thumbnailHash}, ${v.engagement} engagement)`);
+      return true;
+    }).sort((a, b) => b.engagement - a.engagement); // Highest engagement first
     
-    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos that are NOT in recent 15 posts`);
+    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} eligible videos found`);
     
     if (uniqueVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No unique videos found');
       return { success: false, message: 'All videos already posted or similar' };
     }
     
-    // STEP 5: Select videos to process (up to maxPosts setting)
+    // STEP 6: Select videos to process (up to maxPosts setting) - prioritize highest engagement
     const maxPosts = settings.maxPosts || 5;
     const videosToProcess = uniqueVideos.slice(0, maxPosts);
     
