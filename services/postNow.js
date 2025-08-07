@@ -126,13 +126,14 @@ async function executePostNow(settings) {
   try {
     console.log('🚀 [POST NOW] Starting bulletproof 3-layer duplicate protection...');
 
-    // Use existing SchedulerQueue model from server.js (has all required fields)
-    let SchedulerQueueModel;
+    // Use ActivityLog model for completed posts (Post Now = immediate, not scheduled)
+    let ActivityLogModel;
     try {
-      SchedulerQueueModel = mongoose.model('SchedulerQueue');
+      ActivityLogModel = mongoose.model('ActivityLog');
     } catch (error) {
-      // Fallback: should not happen if server.js loaded first
-      throw new Error('SchedulerQueue model not found. Ensure server.js loads first.');
+      // Create ActivityLog model if not exists (flexible schema for activity logs)
+      const activityLogSchema = new mongoose.Schema({}, { strict: false, timestamps: true });
+      ActivityLogModel = mongoose.model('ActivityLog', activityLogSchema, 'activitylogs');
     }
 
     //////////////////////////////////////////////////////////////
@@ -311,8 +312,8 @@ async function executePostNow(settings) {
     // ✅ STEP 7: LOG TO DB (SchedulerQueue)
     //////////////////////////////////
 
-    console.log('💾 [STEP 7] Logging to database...');
-    await SchedulerQueueModel.create({
+    console.log('💾 [STEP 7] Logging to activitylogs (completed post)...');
+    await ActivityLogModel.create({
       platform: "instagram",
       source: "manual",
       originalVideoId: selectedVideo.id,
@@ -321,9 +322,9 @@ async function executePostNow(settings) {
       thumbnailHash: selectedHash,
       caption: finalCaption,
       engagement: selectedVideo.engagement,
-      scheduledTime: new Date(), // Required field from server.js schema
-      status: 'posted',
-      postedAt: new Date(),
+      status: 'success', // Standard for completed posts in activitylogs
+      videoId: selectedVideo.id, // Standard field name in activitylogs
+      createdAt: new Date(),
     });
 
     console.log("✅ [POST NOW] Successfully posted unique video to Instagram.");
