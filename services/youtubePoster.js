@@ -119,12 +119,40 @@ async function postToYouTube(options) {
       .jpeg({ quality: 85 })
       .toBuffer();
     
+    // Build YouTube metadata: title, description, tags
+    function extractHashtags(text = '') {
+      const matches = (text.match(/#[A-Za-z0-9_]+/g) || []).map(h => h.replace('#', '').toLowerCase());
+      return Array.from(new Set(matches));
+    }
+    function pickTitleFromCaption(text = '') {
+      const noTags = text.replace(/#[A-Za-z0-9_]+/g, '').trim();
+      return noTags.slice(0, 95) || 'New video';
+    }
+    function buildTrendingList() {
+      const envList = (process.env.TRENDING_HASHTAGS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      if (envList.length) return envList;
+      return ['realestate','reels','viral','househunting','luxuryhomes','interiordesign','realtor','dreamhome','architecture','property'];
+    }
+    const userTags = extractHashtags(caption);
+    const trending = buildTrendingList();
+    // Replace up to 2 of the user tags with trending ones not already included
+    const finalTags = [...userTags];
+    for (const t of trending) {
+      if (finalTags.length >= 12) break;
+      if (!finalTags.includes(t)) finalTags.push(t);
+    }
+    // Limit tags to 12
+    const limitedTags = finalTags.slice(0, 12);
+    const title = pickTitleFromCaption(caption);
+    const hashtagsLine = limitedTags.map(t => `#${t}`).join(' ');
+    const description = `${caption}\n\n${hashtagsLine}`.slice(0, 4900); // YouTube description limit ~5000
+
     // Create form data for upload (multipart)
     const formData = new FormData();
     formData.append('snippet', JSON.stringify({
-      title: caption.substring(0, 100), // YouTube title limit
-      description: caption || 'Posted via Post Now',
-      tags: ['realestate', 'lifestyle', 'property'],
+      title,
+      description,
+      tags: limitedTags,
       categoryId: '26' // How-to & Style category
     }));
     formData.append('status', JSON.stringify({
