@@ -7,6 +7,18 @@ const cron = require('node-cron');
 const { executeScheduledPost } = require('./postExecutor');
 const fetch = require('node-fetch');
 
+// ✅ Timezone-safe post due checker
+function isPostDueNow(scheduledTime) {
+  const now = new Date();
+  const scheduled = new Date(scheduledTime);
+  
+  // Buffer of ±3 minutes to allow for cron job timing imprecision
+  const bufferMs = 3 * 60 * 1000; // 3 minutes in milliseconds
+  const timeDiff = Math.abs(now.getTime() - scheduled.getTime());
+  
+  return timeDiff <= bufferMs || scheduled <= now;
+}
+
 /**
  * Smart Autopilot Refill System - Maintains queue at target level
  * @param {Object} SchedulerQueueModel - Mongoose model for queue
@@ -82,11 +94,13 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
     // Get current time
     const now = new Date();
     
-    // Find posts that are due (scheduled time <= now) and not yet posted
-    const duePosts = await SchedulerQueueModel.find({
-      scheduledTime: { $lte: now },
+    // Find posts that are scheduled and filter by timezone-safe due check
+    const allScheduledPosts = await SchedulerQueueModel.find({
       status: 'scheduled'
     }).sort({ scheduledTime: 1 }); // Oldest first
+    
+    // ✅ Filter using timezone-safe due checker
+    const duePosts = allScheduledPosts.filter(post => isPostDueNow(post.scheduledTime));
     
     if (duePosts.length === 0) {
       console.log('⏰ [CRON] No posts due at this time');
@@ -253,6 +267,9 @@ module.exports = {
   startCronScheduler,
   stopCronScheduler,
   checkAndExecuteDuePosts,
+  getQueueStats,
+  triggerAutopilotRefill
+};
   getQueueStats,
   triggerAutopilotRefill
 };
