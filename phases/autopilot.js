@@ -74,13 +74,13 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No high-engagement videos found' };
     }
     
-    // STEP 3: Get last 30 posts from your actual Instagram feed to avoid reposting recent content
-    console.log('🔍 [AUTOPILOT] Step 3: Checking last 30 posts from your Instagram feed...');
+    // STEP 3: Get last 15 posts from your actual Instagram feed to avoid reposting recent content
+    console.log('🔍 [AUTOPILOT] Step 3: Checking last 15 posts from your Instagram feed...');
     let recentPostHashes = new Set();
     
     try {
-      // Fetch last 30 posts from your Instagram account using Graph API
-      const instagramUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,thumbnail_url,timestamp&limit=30&access_token=${settings.instagramToken}`;
+      // Fetch last 15 posts from your Instagram account using Graph API
+      const instagramUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,thumbnail_url,timestamp&limit=15&access_token=${settings.instagramToken}`;
       const fetch = require('node-fetch');
       const response = await fetch(instagramUrl);
       
@@ -100,7 +100,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
           }
         }
         
-        console.log(`🛡️ [RECENT POSTS] ${recentPostHashes.size} recent post hashes to avoid`);
+        console.log(`🛡️ [RECENT POSTS] ${recentPostHashes.size} recent post hashes to avoid (last 15 posts)`);
       } else {
         const errorText = await response.text();
         console.log(`⚠️ [INSTAGRAM API] Failed to fetch recent posts: ${response.status} - ${errorText}`);
@@ -132,10 +132,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       
       seenHashes.add(video.thumbnailHash);
       uniqueVideos.push(video);
-      console.log(`✅ [THUMBNAIL FILTER] Unique video (not in recent 30): ${video.id} (hash: ${video.thumbnailHash})`);
+      console.log(`✅ [THUMBNAIL FILTER] Unique video (not in recent 15): ${video.id} (hash: ${video.thumbnailHash})`);
     }
     
-    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos that are NOT in recent 30 posts`);
+    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos that are NOT in recent 15 posts`);
     
     if (uniqueVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No unique videos found');
