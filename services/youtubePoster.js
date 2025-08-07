@@ -144,8 +144,11 @@ async function postToYouTube(options) {
     // Limit tags to 12
     const limitedTags = finalTags.slice(0, 12);
     const title = pickTitleFromCaption(caption);
-    const hashtagsLine = limitedTags.map(t => `#${t}`).join(' ');
-    const description = `${caption}\n\n${hashtagsLine}`.slice(0, 4900); // YouTube description limit ~5000
+    // Keep original caption; just append hashtags if not already present
+    const existingHashtags = extractHashtags(caption);
+    const extra = limitedTags.filter(t => !existingHashtags.includes(t));
+    const hashtagsLine = extra.length ? extra.map(t => `#${t}`).join(' ') : '';
+    const description = (hashtagsLine ? `${caption}\n\n${hashtagsLine}` : caption).slice(0, 4900);
 
     // Use Resumable upload to avoid multipart issues
     const initMetadata = {

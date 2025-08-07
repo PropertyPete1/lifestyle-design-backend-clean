@@ -431,3 +431,22 @@ function buildInstagramCaption(originalCaption = '', trendingEnv = '') {
 }
 
 module.exports.buildInstagramCaption = buildInstagramCaption;
+
+/**
+ * Keep original caption and hashtags; only clean dashes/bullets and ensure CTA line exists
+ */
+function keepOriginalCaptionWithCTA(originalCaption = '') {
+  const cleaned = (originalCaption || '')
+    .replace(/[\-–—•]/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const lower = cleaned.toLowerCase();
+  const hasCta = lower.includes('link in bio') || lower.includes('link in profile');
+  if (hasCta) return cleaned;
+  const sep = cleaned.length ? '\n\n' : '';
+  return `${cleaned}${sep}Fill out the link in bio for info.`;
+}
+
+module.exports.keepOriginalCaptionWithCTA = keepOriginalCaptionWithCTA;

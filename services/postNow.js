@@ -268,13 +268,9 @@ async function executePostNow(settings) {
     //////////////////////////////////
     
     console.log('✏️ [STEP 5] Generating smart caption...');
-    const { generateSmartCaptionWithKey, buildInstagramCaption } = require('./captionAI');
-    // Generate short rewrite then expand/compose with hashtags for IG
-    const rewritten = await generateSmartCaptionWithKey(
-      selectedVideo.caption || '',
-      (settings && settings.openaiApiKey) ? settings.openaiApiKey : null
-    );
-    let finalCaption = buildInstagramCaption(rewritten || selectedVideo.caption || '');
+    const { keepOriginalCaptionWithCTA } = require('./captionAI');
+    // Keep original caption + hashtags; only clean dashes/bullets and add CTA if missing
+    let finalCaption = keepOriginalCaptionWithCTA(selectedVideo.caption || '');
     console.log(`✅ [STEP 5] Generated caption: ${finalCaption.substring(0, 100)}...`);
 
     //////////////////////////////////
