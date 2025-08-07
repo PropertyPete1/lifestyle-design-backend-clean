@@ -26,6 +26,12 @@ async function postToInstagram(postData, settings) {
     
     console.log(`🔗 [IG DEBUG] Video URL: ${videoUrl}`);
     
+    // ✅ Make sure S3 upload completed BEFORE creating media container
+    if (!videoUrl) {
+      console.error('❌ S3 upload failed. Cannot continue with Instagram post.');
+      throw new Error('Video URL is undefined - S3 upload failed');
+    }
+    
     // ✅ Step 1: Create container
     const containerParams = new URLSearchParams({
       media_type: 'REELS',
@@ -211,6 +217,9 @@ async function executeScheduledPost(queueItem, settings) {
 
 module.exports = {
   postToInstagram,
+  postToYouTube,
+  executeScheduledPost
+};
   postToYouTube,
   executeScheduledPost
 };
