@@ -216,6 +216,13 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     
     console.log(`🛡️ [POST NOW] Multi-layer duplicate prevention:`);
     console.log(`📊 [DEBUG] Found ${last30IG.length} posted entries in database`);
+    console.log(`⏰ [DEBUG] Checking LAST ${last30IG.length} MOST RECENT successful Instagram posts`);
+    if (last30IG.length > 0) {
+      const mostRecent = last30IG[0];
+      const oldest = last30IG[last30IG.length - 1];
+      console.log(`📅 [DEBUG] Most recent post: ${mostRecent.createdAt || mostRecent.videoId}`);
+      console.log(`📅 [DEBUG] Oldest in range: ${oldest.createdAt || oldest.videoId}`);
+    }
     console.log(`📸 ${recentHashes.size} recent thumbnail hashes`);
     console.log(`📝 ${recentCaptions.size} recent caption snippets`);
     console.log(`🆔 ${recentVideoIds.size} recent video IDs`);
@@ -256,12 +263,14 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
       const testBuffer = await downloadVideoFromInstagram(video.url);
       const testHash = crypto.createHash('sha256').update(testBuffer).digest('hex').substring(0, 16);
       
-      // Check if this exact video exists in recent posts using videoId and caption
-      const videoExists = recentVideoIds.has(video.id) ||         // Video ID match
-                         recentCaptions.has(video.caption?.trim().toLowerCase().substring(0, 50)); // Caption match
+      // Check if this exact video exists in the LAST 30 MOST RECENT posts
+      const videoIdMatch = recentVideoIds.has(video.id);
+      const captionMatch = recentCaptions.has(video.caption?.trim().toLowerCase().substring(0, 50));
+      const videoExists = videoIdMatch || captionMatch;
       
       if (videoExists) {
-        console.log(`⏭️ [POST NOW] Skipping duplicate video: ${video.id} (already posted)`);
+        const matchType = videoIdMatch ? 'Video ID' : 'Caption';
+        console.log(`⏭️ [POST NOW] Skipping video: ${video.id} - ${matchType} found in LAST 30 MOST RECENT posts`);
         continue;
       }
       
@@ -269,7 +278,8 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
       selectedVideo = video;
       selectedVideoBuffer = testBuffer;
       finalThumbnailHash = testHash;
-      console.log(`✅ [POST NOW] Selected unique video: ${video.id} (hash: ${testHash})`);
+      console.log(`✅ [POST NOW] Selected unique video: ${video.id} - NOT found in last 30 most recent posts`);
+      console.log(`🎯 [POST NOW] Video hash: ${testHash} | Engagement: ${video.engagement}`);
       break;
     }
     
