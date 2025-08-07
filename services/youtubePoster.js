@@ -107,7 +107,7 @@ async function postToYouTube(options) {
         .on('error', reject)
         .screenshots({
           count: 1,
-          timemarks: ['0.0'],
+          timemarks: ['0.5'],
           filename: 'thumb.jpg',
           folder: tmpDir,
           size: '720x?' // reasonable size
@@ -203,12 +203,12 @@ async function postToYouTube(options) {
     
     console.log('✅ [YOUTUBE] Video uploaded successfully:', uploadData.id);
 
-    // Upload custom thumbnail
-    try {
-      console.log('🖼️ [YOUTUBE] Uploading custom thumbnail...');
+    // Upload custom thumbnail (retry after processing for Shorts)
+    const trySetThumbnail = async (attempt) => {
+      console.log(`🖼️ [YOUTUBE] Setting custom thumbnail (attempt ${attempt})...`);
       const thumbForm = new FormData();
       thumbForm.append('media', thumbBuffer, { filename: 'thumbnail.jpg', contentType: 'image/jpeg' });
-      const thumbResp = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${uploadData.id}&uploadType=multipart`, {
+      const resp = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${uploadData.id}&uploadType=multipart`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${freshAccessToken}`,
@@ -216,14 +216,23 @@ async function postToYouTube(options) {
         },
         body: thumbForm,
       });
-      if (!thumbResp.ok) {
-        const td = await thumbResp.text();
-        console.warn('⚠️ [YOUTUBE] Thumbnail upload failed:', td);
-      } else {
-        console.log('✅ [YOUTUBE] Thumbnail set successfully');
+      if (!resp.ok) {
+        const td = await resp.text();
+        console.warn(`⚠️ [YOUTUBE] Thumbnail upload failed (attempt ${attempt}):`, td);
+        return false;
       }
-    } catch (thumbErr) {
-      console.warn('⚠️ [YOUTUBE] Thumbnail step error:', thumbErr.message);
+      console.log('✅ [YOUTUBE] Thumbnail set successfully');
+      return true;
+    };
+
+    let thumbOk = await trySetThumbnail(1);
+    if (!thumbOk) {
+      for (let a = 2; a <= 4; a++) {
+        console.log('⏳ [YOUTUBE] Waiting 30s before retrying thumbnail...');
+        await new Promise(r => setTimeout(r, 30000));
+        thumbOk = await trySetThumbnail(a);
+        if (thumbOk) break;
+      }
     }
     
     return {
