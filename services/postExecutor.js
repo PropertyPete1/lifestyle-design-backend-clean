@@ -22,7 +22,9 @@ async function postToInstagram(postData, settings) {
       throw new Error('Missing Instagram credentials');
     }
     
-    const { videoUrl, caption, trendingAudio } = postData;
+    // ✅ Extract data from Mongoose document (handle both plain objects and Mongoose docs)
+    const cleanPostData = postData.toObject ? postData.toObject() : postData;
+    const { videoUrl, caption, trendingAudio } = cleanPostData;
     
     // 🧪 [DEBUG] Full post data analysis
     console.log('📱 [INSTAGRAM POST] Starting Instagram post...');
@@ -142,7 +144,10 @@ async function postToYouTube(postData, settings) {
       throw new Error('Missing YouTube credentials');
     }
     
-    const { s3Url, caption } = postData;
+    // ✅ Extract data from Mongoose document (handle both plain objects and Mongoose docs)
+    const cleanPostData = postData.toObject ? postData.toObject() : postData;
+    const { videoUrl, caption } = cleanPostData;
+    const s3Url = videoUrl; // YouTube uses same video URL
     
     // Download video from S3
     console.log('⬇️ [YOUTUBE] Downloading video from S3...');
