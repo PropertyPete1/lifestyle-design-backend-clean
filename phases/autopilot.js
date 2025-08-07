@@ -45,12 +45,12 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'Missing S3 credentials' };
     }
     
-    // STEP 1: Scrape latest 500 Instagram videos
-    console.log('📱 [AUTOPILOT] Step 1: Scraping 500 Instagram videos...');
+    // STEP 1: Scrape latest 200 Instagram videos (reduced to prevent timeouts)
+    console.log('📱 [AUTOPILOT] Step 1: Scraping 200 Instagram videos...');
     const scrapedVideos = await scrapeInstagramEngagement(
       settings.igBusinessId, 
       settings.instagramToken, 
-      500
+      200
     );
     
     console.log(`✅ [IG SCRAPER] Scraped ${scrapedVideos.length} videos`);
