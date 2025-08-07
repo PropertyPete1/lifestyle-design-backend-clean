@@ -23,8 +23,14 @@ async function postToInstagram(options) {
       thumbnailHash: options.thumbnailHash?.substring(0, 12) + '...'
     });
 
-    // Get settings for Instagram credentials
-    const SettingsModel = require('../src/models/settings');
+    // Get settings for Instagram credentials (avoid model overwrite)
+    const mongoose = require('mongoose');
+    let SettingsModel;
+    try {
+      SettingsModel = mongoose.model('SettingsClean');
+    } catch (error) {
+      SettingsModel = require('../src/models/settings');
+    }
     const settings = await SettingsModel.findOne({});
     
     if (!settings || !settings.instagramToken || !settings.igBusinessId) {
