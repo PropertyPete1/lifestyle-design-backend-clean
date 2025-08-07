@@ -212,9 +212,20 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     const recentVideoIds = new Set(last30IG.map(v => v.originalVideoId).filter(id => id));
     
     console.log(`🛡️ [POST NOW] Multi-layer duplicate prevention:`);
+    console.log(`📊 [DEBUG] Found ${last30IG.length} posted entries in database`);
     console.log(`📸 ${recentHashes.size} recent thumbnail hashes`);
     console.log(`📝 ${recentCaptions.size} recent caption snippets`);
     console.log(`🆔 ${recentVideoIds.size} recent video IDs`);
+    
+    // DEBUG: If no posted entries exist, log this critical issue
+    if (last30IG.length === 0) {
+      console.log(`⚠️ [POST NOW] WARNING: Database has NO posted entries! This means:`);
+      console.log(`   1. Post Now never saved posted entries before`);
+      console.log(`   2. OR cron scheduler isn't marking posts as 'posted'`);
+      console.log(`   3. OR database was cleared`);
+      console.log(`   4. This will cause same video selection repeatedly!`);
+      console.log(`🔄 [POST NOW] APPLYING TEMPORARY FIX: Adding time-based randomization to prevent same video selection`);
+    }
     
     // STEP 3: Find unique high-engagement video with PRE-DOWNLOAD hash verification
     let selectedVideo = null;
@@ -224,7 +235,15 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     console.log('🔍 [POST NOW] Starting pre-download duplicate filtering...');
     const crypto = require('crypto');
     
-    for (const video of scrapedVideos) {
+    // If no posted entries exist, randomize the start point to avoid always selecting the same video
+    let startIndex = 0;
+    if (last30IG.length === 0) {
+      startIndex = Math.floor(Math.random() * Math.min(scrapedVideos.length, 20)); // Random start within first 20 videos
+      console.log(`🎲 [POST NOW] Starting from random index ${startIndex} to avoid repeat selection`);
+    }
+    
+    for (let i = startIndex; i < scrapedVideos.length; i++) {
+      const video = scrapedVideos[i];
       if (video.engagement < 10000) continue; // Skip low engagement
       
       console.log(`🔍 [POST NOW] Testing video ${video.id} (${video.engagement} engagement)...`);
@@ -293,7 +312,8 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     const youtubeResult = await postToYouTube(postData, settings);
     
     // STEP 7: Log as posted in database with final thumbnail hash
-    await SchedulerQueueModel.create({
+    console.log(`💾 [POST NOW] Saving to database with hash: ${finalThumbnailHash}`);
+    const postedEntry = await SchedulerQueueModel.create({
       platform: 'instagram',
       source: 'postNow',
       originalVideoId: selectedVideo.id,
@@ -305,6 +325,7 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
       postedAt: new Date(),
       scheduledTime: new Date() // Posted immediately
     });
+    console.log(`✅ [POST NOW] Database entry created with ID: ${postedEntry._id}`);
     
     console.log('✅ [POST NOW] Successfully posted to Instagram and YouTube!');
     
