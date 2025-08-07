@@ -26,6 +26,14 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'AutoPilot disabled' };
     }
     
+    // Debug: Log what credentials we found
+    console.log('🔍 [AUTOPILOT] Settings debug:');
+    console.log(`  - instagramToken: ${settings.instagramToken ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - igBusinessId: ${settings.igBusinessId ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - s3AccessKey: ${settings.s3AccessKey ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - s3SecretKey: ${settings.s3SecretKey ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - s3BucketName: ${settings.s3BucketName ? 'EXISTS' : 'MISSING'}`);
+    
     // Check required credentials
     if (!settings.instagramToken || !settings.igBusinessId) {
       console.log('⚠️ [AUTOPILOT] Missing Instagram credentials');
@@ -93,7 +101,9 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
         
         console.log(`🛡️ [RECENT POSTS] ${recentPostHashes.size} recent post hashes to avoid`);
       } else {
-        console.log('⚠️ [INSTAGRAM API] Failed to fetch recent posts, proceeding without recent post filtering');
+        const errorText = await response.text();
+        console.log(`⚠️ [INSTAGRAM API] Failed to fetch recent posts: ${response.status} - ${errorText}`);
+        console.log('⚠️ [INSTAGRAM API] Proceeding without recent post filtering');
       }
     } catch (error) {
       console.log('⚠️ [INSTAGRAM API] Error fetching recent posts:', error.message);
