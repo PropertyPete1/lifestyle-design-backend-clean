@@ -257,6 +257,27 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     
     console.log(`✅ [POST NOW] Video uploaded: ${s3Url}`);
     
+    // STEP 4.5: Generate final thumbnail hash from S3 video buffer for ultimate duplicate checking
+    console.log('🔐 [POST NOW] Generating final thumbnail hash from S3 video...');
+    const crypto = require('crypto');
+    const s3Response = await require('node-fetch')(s3Url);
+    const s3Buffer = await s3Response.buffer();
+    const finalThumbnailHash = crypto.createHash('sha256').update(s3Buffer).digest('hex').substring(0, 16);
+    
+    // FINAL DUPLICATE CHECK: Verify this exact video hash wasn't posted in last 30
+    const finalDuplicateCheck = await SchedulerQueueModel.findOne({
+      platform: 'instagram',
+      status: 'posted',
+      thumbnailHash: finalThumbnailHash
+    }).sort({ postedAt: -1 }).limit(30);
+    
+    if (finalDuplicateCheck) {
+      console.log(`⚠️ [POST NOW] FINAL CHECK: Duplicate detected with exact hash match - ABORTING`);
+      return res.status(409).json({ error: 'Duplicate video detected in final hash check' });
+    }
+    
+    console.log(`✅ [POST NOW] Final hash verification passed: ${finalThumbnailHash}`);
+    
     // STEP 5: Generate enhanced caption
     console.log('🧠 [POST NOW] Generating smart caption...');
     const enhancedCaption = await generateSmartCaptionWithKey(
@@ -278,14 +299,14 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     console.log('🎥 [POST NOW] Posting to YouTube...');
     const youtubeResult = await postToYouTube(postData, settings);
     
-    // STEP 7: Log as posted in database
+    // STEP 7: Log as posted in database with final thumbnail hash
     await SchedulerQueueModel.create({
       platform: 'instagram',
       source: 'postNow',
       originalVideoId: selectedVideo.id,
       videoUrl: s3Url,
       caption: enhancedCaption,
-      thumbnailHash: selectedVideo.thumbnailHash,
+      thumbnailHash: finalThumbnailHash, // Use the final hash from S3 buffer
       engagement: selectedVideo.engagement,
       status: 'posted',
       postedAt: new Date(),
