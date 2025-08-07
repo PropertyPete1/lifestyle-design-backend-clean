@@ -24,13 +24,27 @@ async function postToInstagram(postData, settings) {
     
     const { videoUrl, caption, trendingAudio } = postData;
     
-    console.log(`🔗 [IG DEBUG] Video URL: ${videoUrl}`);
+    // 🧪 [DEBUG] Full post data analysis
+    console.log('📱 [INSTAGRAM POST] Starting Instagram post...');
+    console.log('🧪 [DEBUG] Full postData received:', JSON.stringify(postData, null, 2));
+    console.log('🔗 [IG DEBUG] Video URL:', videoUrl);
+    console.log('📝 [IG DEBUG] Caption length:', caption ? caption.length : 'null');
+    console.log('🎵 [IG DEBUG] Trending audio:', trendingAudio || 'none');
     
     // ✅ Make sure S3 upload completed BEFORE creating media container
     if (!videoUrl) {
-      console.error('❌ S3 upload failed. Cannot continue with Instagram post.');
+      console.error('❌ [CRITICAL] Video URL is undefined/null');
+      console.error('🔍 [DEBUG] PostData keys:', Object.keys(postData));
       throw new Error('Video URL is undefined - S3 upload failed');
     }
+    
+    // 🧪 [DEBUG] Validate URL format
+    if (!videoUrl.startsWith('http')) {
+      console.error('❌ [CRITICAL] Video URL invalid format:', videoUrl);
+      throw new Error('Video URL is not a valid HTTP URL');
+    }
+    
+    console.log('✅ [VALIDATION] Video URL is valid, proceeding with Instagram API...');
     
     // ✅ Step 1: Create container
     const containerParams = new URLSearchParams({
@@ -45,6 +59,11 @@ async function postToInstagram(postData, settings) {
       containerParams.append('audio_name', trendingAudio);
     }
     
+    // 🧪 [DEBUG] Instagram API call details
+    console.log('📤 [IG API] Creating media container...');
+    console.log('🔗 [IG API] URL:', `https://graph.facebook.com/v18.0/${settings.igBusinessId}/media`);
+    console.log('📋 [IG API] Parameters:', Object.fromEntries(containerParams));
+    
     const containerResponse = await fetch(
       `https://graph.facebook.com/v18.0/${settings.igBusinessId}/media`,
       {
@@ -53,11 +72,16 @@ async function postToInstagram(postData, settings) {
       }
     );
     
+    console.log('📥 [IG API] Container response status:', containerResponse.status);
+    
     const containerData = await containerResponse.json();
     
+    console.log('📝 [IG API] Container response data:', JSON.stringify(containerData, null, 2));
+    
     if (!containerData.id) {
-      console.error('❌ [IG ERROR] Failed to create media container:', containerData);
-      throw new Error('Instagram container creation failed');
+      console.error('❌ [IG ERROR] Failed to create media container');
+      console.error('🔍 [IG ERROR] Response details:', containerData);
+      throw new Error(`Instagram container creation failed: ${JSON.stringify(containerData)}`);
     }
     
     console.log('📦 [INSTAGRAM] Media container created:', containerData.id);
