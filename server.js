@@ -893,7 +893,7 @@ const startServer = async () => {
   await connectDB();
   
   app.listen(PORT, () => {
-    console.log('🚀 [SERVER] Backend v2 running on port', PORT);
+    console.log('🚀 [SERVER] Backend v2 running on port', PORT, '- Instagram API Duplicate Detection ACTIVE');
     console.log('📋 [SERVER] Available endpoints:');
     console.log('   GET  /health - Health check');
     console.log('   GET  /api/settings - Load settings (DIRECT)');
