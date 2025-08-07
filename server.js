@@ -114,6 +114,27 @@ app.delete('/api/autopilot/queue', async (req, res) => {
   }
 });
 
+// Debug posted videos
+app.get('/api/debug/posted-videos', async (req, res) => {
+  try {
+    const postedVideos = await SchedulerQueueModel.find({ 
+      platform: "instagram", 
+      status: "posted" 
+    })
+    .sort({ postedAt: -1 })
+    .limit(30)
+    .select("thumbnailHash originalVideoId postedAt engagement");
+    
+    res.json({ 
+      count: postedVideos.length,
+      videos: postedVideos 
+    });
+  } catch (error) {
+    console.error('❌ [DEBUG POSTED] Error:', error);
+    res.status(500).json({ error: 'Failed to get posted videos' });
+  }
+});
+
 // Get autopilot queue
 app.get('/api/autopilot/queue', async (req, res) => {
   try {
