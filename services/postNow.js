@@ -122,6 +122,7 @@ async function executePostNow(settings) {
     // ✅ STEP 2: SCRAPE CANDIDATES, SORT BY ENGAGEMENT, FILTER DOWN  
     //////////////////////////////////////////////////////
 
+    // Fetch candidates WITHOUT computing thumbnail hashes to save memory/CPU
     let candidates = await scrapeInstagramVideos(settings); // [{ id, videoUrl, caption, engagement, audioId, duration }]
     
     candidates = candidates
@@ -155,8 +156,10 @@ async function executePostNow(settings) {
       // Download only when cheap checks pass; prefer hashing from thumbnail URL to avoid full video in memory
       let hash;
       try {
-        const { generateThumbnailHash } = require('../utils/instagramScraper');
-        hash = await generateThumbnailHash(video.thumbnailUrl || video.url);
+        // Use deterministic lightweight hash (URL-based) to avoid image downloads
+        const crypto = require('crypto');
+        const basis = (video.thumbnailUrl || video.url || '').toLowerCase();
+        hash = crypto.createHash('md5').update(basis).digest('hex').substring(0, 16);
       } catch (_) {
         const buffer = await downloadVideoBuffer(video.url);
         const frame = await extractFirstFrame(buffer);

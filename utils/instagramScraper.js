@@ -12,7 +12,7 @@ const fetch = require('node-fetch');
  * @param {number} limit - Number of videos to scrape (default 500)
  * @returns {Promise<Array>} Array of video objects with engagement
  */
-async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
+async function scrapeInstagramEngagement(businessId, accessToken, limit = 500, includeVisualHash = false) {
   try {
     console.log(`🕷️ [IG SCRAPER] FUNCTION CALLED WITH LIMIT: ${limit} videos`);
     console.log(`🕷️ [IG SCRAPER] Scraping ${limit} videos for engagement data`);
@@ -65,8 +65,9 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
             permalink: media.permalink,
             audioId: audioId, // NEW: Audio ID for duplicate detection
             musicMetadata: media.music_metadata || null, // Store full metadata for debugging
-            thumbnailHash: await generateThumbnailHash(media.thumbnail_url),
-            fingerprint: await generateThumbnailHash(media.thumbnail_url) // Use visual hash as fingerprint
+            // Visual hashes are expensive; compute only if explicitly requested
+            thumbnailHash: includeVisualHash && media.thumbnail_url ? await generateThumbnailHash(media.thumbnail_url) : null,
+            fingerprint: null
           };
           
           // Log audio info for first few videos (debugging)
