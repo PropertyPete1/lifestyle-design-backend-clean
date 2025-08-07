@@ -126,26 +126,13 @@ async function executePostNow(settings) {
   try {
     console.log('🚀 [POST NOW] Starting bulletproof 3-layer duplicate protection...');
 
-    // Get SchedulerQueue model (avoid overwrite)
+    // Use existing SchedulerQueue model from server.js (has all required fields)
     let SchedulerQueueModel;
     try {
       SchedulerQueueModel = mongoose.model('SchedulerQueue');
     } catch (error) {
-      const schedulerQueueSchema = new mongoose.Schema({
-        platform: String,
-        source: String,
-        originalVideoId: String,
-        videoUrl: String,
-        thumbnailUrl: String,
-        thumbnailHash: String,
-        audioId: String,
-        caption: String,
-        engagement: Number,
-        createdAt: { type: Date, default: Date.now },
-        postedAt: { type: Date, default: Date.now },
-        status: { type: String, default: 'posted' }
-      }, { timestamps: true });
-      SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema, 'schedulerqueue');
+      // Fallback: should not happen if server.js loaded first
+      throw new Error('SchedulerQueue model not found. Ensure server.js loads first.');
     }
 
     //////////////////////////////////////////////////////////////
@@ -334,7 +321,8 @@ async function executePostNow(settings) {
       thumbnailHash: selectedHash,
       caption: finalCaption,
       engagement: selectedVideo.engagement,
-      audioId: selectedVideo.audioId,
+      scheduledTime: new Date(), // Required field from server.js schema
+      status: 'posted',
       postedAt: new Date(),
     });
 
