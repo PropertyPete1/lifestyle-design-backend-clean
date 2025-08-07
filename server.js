@@ -248,6 +248,69 @@ app.get('/api/events/recent', (req, res) => {
   res.json({ events: [], lastUpdated: new Date().toISOString() });
 });
 
+// Test YouTube credentials endpoint
+app.get('/api/test/youtube', async (req, res) => {
+  try {
+    console.log('🔍 [YOUTUBE TEST] Fetching and testing YouTube credentials...');
+    const settings = await SettingsModel.findOne();
+    
+    if (!settings) {
+      return res.json({ error: 'No settings found' });
+    }
+    
+    // Log what YouTube credentials we have
+    console.log('🔍 [YOUTUBE TEST] YouTube credentials check:');
+    console.log(`  - youtubeClientId: ${settings.youtubeClientId ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - youtubeClientSecret: ${settings.youtubeClientSecret ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - youtubeAccessToken: ${settings.youtubeAccessToken ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - youtubeRefreshToken: ${settings.youtubeRefreshToken ? 'EXISTS' : 'MISSING'}`);
+    console.log(`  - youtubeChannelId: ${settings.youtubeChannelId ? 'EXISTS' : 'MISSING'}`);
+    
+    const result = {
+      hasClientId: !!settings.youtubeClientId,
+      hasClientSecret: !!settings.youtubeClientSecret,
+      hasAccessToken: !!settings.youtubeAccessToken,
+      hasRefreshToken: !!settings.youtubeRefreshToken,
+      hasChannelId: !!settings.youtubeChannelId
+    };
+    
+    // Test YouTube API if we have access token
+    if (settings.youtubeAccessToken) {
+      try {
+        const fetch = require('node-fetch');
+        const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&mine=true&access_token=${settings.youtubeAccessToken}`;
+        console.log('🔗 [YOUTUBE TEST] Testing API call...');
+        
+        const response = await fetch(channelUrl);
+        const data = await response.json();
+        
+        if (response.ok) {
+          console.log('✅ [YOUTUBE TEST] API call successful!');
+          console.log(`📊 [YOUTUBE TEST] Channel: ${data.items?.[0]?.snippet?.title}`);
+          result.apiTest = 'SUCCESS';
+          result.channelData = data.items?.[0];
+        } else {
+          console.log(`❌ [YOUTUBE TEST] API call failed: ${response.status}`);
+          console.log(`❌ [YOUTUBE TEST] Error: ${JSON.stringify(data)}`);
+          result.apiTest = 'FAILED';
+          result.apiError = data;
+        }
+      } catch (apiError) {
+        console.log(`❌ [YOUTUBE TEST] API error: ${apiError.message}`);
+        result.apiTest = 'ERROR';
+        result.apiError = apiError.message;
+      }
+    } else {
+      result.apiTest = 'NO_TOKEN';
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ [YOUTUBE TEST] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
