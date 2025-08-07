@@ -70,32 +70,28 @@ async function uploadToS3(localPath, s3Key, settings) {
  * @param {Object} settings - Settings with S3 credentials
  * @returns {Promise<string>} Public S3 URL
  */
-async function uploadBufferToS3(buffer, s3Key, settings) {
+async function uploadBufferToS3(buffer, s3Key, contentType = 'video/mp4') {
   try {
     console.log('☁️ [S3 BUFFER UPLOAD] Starting upload:', s3Key);
     
-    // Configure AWS with user's credentials
-    configureAWS(settings);
-    
-    // Create S3 instance with configured credentials
+    // Use environment variables directly (bulletproof approach)
     const s3Instance = new AWS.S3({
-      accessKeyId: settings.s3AccessKey,
-      secretAccessKey: settings.s3SecretKey,
-      region: settings.s3Region || 'us-east-1'
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_REGION || 'us-east-1'
     });
     
     const params = {
-      Bucket: settings.s3BucketName,
+      Bucket: process.env.S3_BUCKET_NAME,
       Key: s3Key,
       Body: buffer,
-      ContentType: 'video/mp4',
+      ContentType: contentType,
+      ACL: 'public-read', // Make sure URL is public
     };
 
     const result = await s3Instance.upload(params).promise();
-    const publicUrl = result.Location || `https://${settings.s3BucketName}.s3.${settings.s3Region || 'us-east-1'}.amazonaws.com/${s3Key}`;
-    
-    console.log('✅ [S3 BUFFER UPLOAD] Success:', publicUrl);
-    return publicUrl;
+    console.log('✅ [S3 BUFFER UPLOAD] Success:', result.Location);
+    return result.Location;
     
   } catch (error) {
     console.error('❌ [S3 BUFFER UPLOAD ERROR]', error);
