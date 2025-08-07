@@ -6,6 +6,7 @@
 const AWS = require('aws-sdk');
 const fs = require('fs');
 const path = require('path');
+const fetch = require('node-fetch');
 
 // Configure AWS SDK
 const configureAWS = (settings) => {
@@ -117,3 +118,43 @@ module.exports = {
   uploadBufferToS3,
   generateS3Key
 };
+
+/**
+ * Stream a remote URL directly into S3 without buffering the whole file in memory
+ * @param {string} fileUrl - Remote file URL (e.g., Instagram media URL)
+ * @param {string} s3Key - S3 object key
+ * @param {string} contentType - MIME type (default video/mp4)
+ * @returns {Promise<string>} Public S3 URL
+ */
+async function uploadUrlToS3(fileUrl, s3Key, contentType = 'video/mp4') {
+  try {
+    console.log('☁️ [S3 STREAM UPLOAD] Streaming URL to S3:', s3Key);
+
+    const response = await fetch(fileUrl);
+    if (!response.ok || !response.body) {
+      throw new Error(`Failed to fetch remote file: ${response.status}`);
+    }
+
+    const s3Instance = new AWS.S3({
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_REGION || 'us-east-1'
+    });
+
+    const params = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: s3Key,
+      Body: response.body, // stream
+      ContentType: contentType,
+    };
+
+    const result = await s3Instance.upload(params).promise();
+    console.log('✅ [S3 STREAM UPLOAD] Success:', result.Location);
+    return result.Location;
+  } catch (error) {
+    console.error('❌ [S3 STREAM UPLOAD ERROR]', error);
+    throw new Error(`S3 stream upload failed: ${error.message}`);
+  }
+}
+
+module.exports.uploadUrlToS3 = uploadUrlToS3;

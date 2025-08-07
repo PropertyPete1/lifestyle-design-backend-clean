@@ -152,9 +152,16 @@ async function executePostNow(settings) {
         continue;
       }
 
-      const buffer = await downloadVideoBuffer(video.url);
-      const frame = await extractFirstFrame(buffer);
-      const hash = await generateVisualHash(frame);
+      // Download only when cheap checks pass; prefer hashing from thumbnail URL to avoid full video in memory
+      let hash;
+      try {
+        const { generateThumbnailHash } = require('../utils/instagramScraper');
+        hash = await generateThumbnailHash(video.thumbnailUrl || video.url);
+      } catch (_) {
+        const buffer = await downloadVideoBuffer(video.url);
+        const frame = await extractFirstFrame(buffer);
+        hash = await generateVisualHash(frame);
+      }
 
       const isDuplicateVisual = last30Hashes.includes(hash);
       const isDuplicateCaption = last30Captions.some(c => compareCaptionSimilarity(video.caption, c) > 0.9);
@@ -168,7 +175,8 @@ async function executePostNow(settings) {
       // ✅ This video passed all checks — it's unique
       selectedVideo = video;
       selectedHash = hash;
-      selectedBuffer = buffer;
+      // Defer downloading full video until after selection
+      selectedBuffer = null;
       console.log(`✅ [STEP 3] Selected unique video: ${video.id} (may not be #1 engagement)`);
       break;
     }
@@ -188,9 +196,10 @@ async function executePostNow(settings) {
     //////////////////////////////////
     
     console.log('☁️ [STEP 4] Uploading to S3...');
-    const { uploadBufferToS3 } = require('../utils/s3Uploader');
+    const { uploadBufferToS3, uploadUrlToS3 } = require('../utils/s3Uploader');
     const s3Key = `autopilot/manual/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp4`;
-    const s3Url = await uploadBufferToS3(selectedBuffer, s3Key, "video/mp4");
+    // Stream upload from source to minimize memory usage
+    const s3Url = await uploadUrlToS3(selectedVideo.url, s3Key, 'video/mp4');
     console.log(`✅ [STEP 4] Uploaded to S3: ${s3Url}`);
 
     //////////////////////////////////
