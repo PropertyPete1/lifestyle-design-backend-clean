@@ -5,6 +5,10 @@
 
 const fetch = require('node-fetch');
 const FormData = require('form-data');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+const sharp = require('sharp');
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 /**
  * Refresh YouTube access token
@@ -85,8 +89,37 @@ async function postToYouTube(options) {
     console.log('⬇️ [YOUTUBE] Downloading video from S3...');
     const videoResponse = await fetch(videoUrl);
     const videoBuffer = await videoResponse.buffer();
+
+    // Extract first-frame thumbnail (JPEG)
+    console.log('🖼️ [YOUTUBE] Extracting first-frame thumbnail...');
+    const { createWriteStream, promises: fsPromises } = require('fs');
+    const { mkdtemp, unlink } = fsPromises;
+    const os = require('os');
+    const path = require('path');
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'yt-thumb-'));
+    const inputPath = path.join(tmpDir, 'input.mp4');
+    const outputThumb = path.join(tmpDir, 'thumb.jpg');
+    await fsPromises.writeFile(inputPath, videoBuffer);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .on('end', resolve)
+        .on('error', reject)
+        .screenshots({
+          count: 1,
+          timemarks: ['0.0'],
+          filename: 'thumb.jpg',
+          folder: tmpDir,
+          size: '720x?' // reasonable size
+        });
+    });
+
+    // Ensure reasonable quality via sharp
+    const thumbBuffer = await sharp(outputThumb)
+      .jpeg({ quality: 85 })
+      .toBuffer();
     
-    // Create form data for upload
+    // Create form data for upload (multipart)
     const formData = new FormData();
     formData.append('snippet', JSON.stringify({
       title: caption.substring(0, 100), // YouTube title limit
@@ -121,6 +154,29 @@ async function postToYouTube(options) {
     }
     
     console.log('✅ [YOUTUBE] Video uploaded successfully:', uploadData.id);
+
+    // Upload custom thumbnail
+    try {
+      console.log('🖼️ [YOUTUBE] Uploading custom thumbnail...');
+      const thumbForm = new FormData();
+      thumbForm.append('media', thumbBuffer, { filename: 'thumbnail.jpg', contentType: 'image/jpeg' });
+      const thumbResp = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${uploadData.id}&uploadType=multipart`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${freshAccessToken}`,
+          ...thumbForm.getHeaders(),
+        },
+        body: thumbForm,
+      });
+      if (!thumbResp.ok) {
+        const td = await thumbResp.text();
+        console.warn('⚠️ [YOUTUBE] Thumbnail upload failed:', td);
+      } else {
+        console.log('✅ [YOUTUBE] Thumbnail set successfully');
+      }
+    } catch (thumbErr) {
+      console.warn('⚠️ [YOUTUBE] Thumbnail step error:', thumbErr.message);
+    }
     
     return {
       success: true,

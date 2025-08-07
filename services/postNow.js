@@ -282,15 +282,29 @@ async function executePostNow(settings) {
     
     console.log('📱 [STEP 6] Posting to Instagram...');
     const { postToInstagram } = require('./instagramPoster');
-    
-    await postToInstagram({
-      videoUrl: s3Url,
-      caption: finalCaption,
-      thumbnailUrl: s3Url,
-      source: "manual"
-    });
-    
+    await postToInstagram({ videoUrl: s3Url, caption: finalCaption, thumbnailUrl: s3Url, source: "manual" });
     console.log('✅ [STEP 6] Posted to Instagram successfully');
+
+    // YouTube (optional): if settings.postToYouTube true, post the same video to YouTube with custom thumbnail
+    if (settings && settings.postToYouTube) {
+      try {
+        console.log('📺 [STEP 6B] Posting to YouTube...');
+        const { postToYouTube } = require('./youtubePoster');
+        const ytResult = await postToYouTube({
+          videoUrl: s3Url,
+          caption: finalCaption,
+          thumbnailHash: selectedHash,
+          source: 'manual'
+        });
+        if (!ytResult.success) {
+          console.warn('⚠️ [STEP 6B] YouTube post failed:', ytResult.error);
+        } else {
+          console.log('✅ [STEP 6B] YouTube posted:', ytResult.url);
+        }
+      } catch (e) {
+        console.warn('⚠️ [STEP 6B] YouTube step error:', e.message);
+      }
+    }
 
     //////////////////////////////////
     // ✅ STEP 7: LOG TO DATABASE ONLY
