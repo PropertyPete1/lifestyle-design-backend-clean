@@ -49,8 +49,8 @@ async function postToInstagram(postData, settings) {
     console.log('✅ [VALIDATION] Video URL is valid, proceeding with Instagram API...');
     
     // ✅ Wait for Instagram media to be ready before publishing (FIX 1)
-    console.log('⏰ [IG] Waiting 30 seconds for Instagram video processing...');
-    await new Promise((resolve) => setTimeout(resolve, 30000)); // wait 30 sec
+    console.log('⏰ [IG] Waiting 90 seconds for Instagram video processing...');
+    await new Promise((resolve) => setTimeout(resolve, 90000)); // wait 90 sec
     console.log('✅ [IG] Instagram video processing wait completed');
     
     // ✅ Step 1: Create container
