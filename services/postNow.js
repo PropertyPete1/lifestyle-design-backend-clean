@@ -52,19 +52,26 @@ async function executePostNow(settings) {
     // - Extract their thumbnail hashes + captions
     // --------------------------------------------
     console.log('🗄️ [STEP 2] Fetching last 30 posts from database...');
-    const SchedulerQueueModel = mongoose.model('SchedulerQueue', new mongoose.Schema({
-      platform: String,
-      source: String,
-      originalVideoId: String,
-      videoUrl: String,
-      thumbnailUrl: String,
-      thumbnailHash: String,
-      caption: String,
-      engagement: Number,
-      createdAt: { type: Date, default: Date.now },
-      postedAt: { type: Date, default: Date.now },
-      status: { type: String, default: 'posted' }
-    }, { timestamps: true }), 'schedulerqueue');
+    // Check if model already exists to avoid overwrite error
+    let SchedulerQueueModel;
+    try {
+      SchedulerQueueModel = mongoose.model('SchedulerQueue');
+    } catch (error) {
+      const schedulerQueueSchema = new mongoose.Schema({
+        platform: String,
+        source: String,
+        originalVideoId: String,
+        videoUrl: String,
+        thumbnailUrl: String,
+        thumbnailHash: String,
+        caption: String,
+        engagement: Number,
+        createdAt: { type: Date, default: Date.now },
+        postedAt: { type: Date, default: Date.now },
+        status: { type: String, default: 'posted' }
+      }, { timestamps: true });
+      SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema, 'schedulerqueue');
+    }
 
     const recentPosts = await SchedulerQueueModel.find({ 
       platform: "instagram", 
