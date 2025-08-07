@@ -141,15 +141,7 @@ async function executePostNow(settings) {
     //////////////////////////////////////////////////////////////
 
     // This ensures we're filtering against real post history, not just database logs
-    console.log('🚀 [DEBUG] About to call fetchLast30InstagramPosts...');
-    console.log('🔑 [DEBUG] Settings check:', {
-      hasToken: !!settings.instagramToken,
-      hasBusinessId: !!settings.igBusinessId,
-      tokenLength: settings.instagramToken ? settings.instagramToken.length : 0
-    });
-    
     const last30InstagramPosts = await fetchLast30InstagramPosts(settings); // [{ id, thumbnailUrl, caption, audioId }]
-    console.log('✅ [DEBUG] fetchLast30InstagramPosts completed successfully');
 
     // Generate visual/audio/caption fingerprints for comparison (SEQUENTIAL to avoid memory overload)
     console.log('🔍 [STEP 1] Generating fingerprints sequentially to prevent memory leaks...');
