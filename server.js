@@ -217,52 +217,32 @@ app.post('/api/autopilot/run', async (req, res) => {
   try {
     console.log('🚀 [AUTOPILOT] Starting AutoPilot run...');
     
-    const settings = await SettingsModel.findOne();
-    if (!settings) {
-      return res.status(400).json({ error: 'No settings found. Please configure your credentials first.' });
+    // Import our clean autopilot module
+    const { runInstagramAutoPilot } = require('./phases/autopilot');
+    
+    // Run the autopilot using our clean module
+    const result = await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
+    
+    if (result.success) {
+      res.json({ 
+        success: true, 
+        message: result.message,
+        processed: result.processed || 0,
+        total: result.total || 0
+      });
+    } else {
+      res.status(400).json({ error: result.message });
     }
 
-    if (!settings.autopilotEnabled) {
-      return res.status(400).json({ error: 'AutoPilot is disabled. Enable it in settings first.' });
-    }
+  } catch (error) {
+    console.error('❌ [AUTOPILOT] Error:', error);
+    res.status(500).json({ error: 'AutoPilot failed to run' });
+  }
+});
 
-    // ✅ FULL AUTOPILOT SYSTEM IMPLEMENTATION
-    console.log('🤖 [AUTOPILOT] Starting comprehensive autopilot system...');
-    
-    // STEP 1: Check required credentials for S3, Instagram, OpenAI
-    if (!settings.s3AccessKey || !settings.s3SecretKey || !settings.s3BucketName) {
-      return res.status(400).json({ error: 'Missing S3 credentials for video hosting' });
-    }
-    
-    if (!settings.instagramToken || !settings.igBusinessId) {
-      return res.status(400).json({ error: 'Missing Instagram credentials' });
-    }
-    
-    // STEP 2: Import comprehensive autopilot utilities
-    const { uploadBufferToS3, generateS3Key } = require('./utils/s3Uploader');
-    const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('./utils/instagramScraper');
-    const { getLast30PostedVideos, filterUniqueVideos } = require('./utils/postHistory');
-    const { generateSmartCaptionWithKey, findTrendingAudio } = require('./services/captionAI');
-    
-    // STEP 3: Scrape latest 500 Instagram videos using Visual Scraper
-    console.log('📱 [AUTOPILOT] Step 1: Scraping 500 Instagram videos...');
-    const scrapedVideos = await scrapeInstagramEngagement(settings.igBusinessId, settings.instagramToken, 500);
-    
-    // STEP 4: Sort by engagement descending (≥10,000 engagement)
-    const qualifiedVideos = scrapedVideos
-      .filter(v => v.engagement >= 10000)
-      .sort((a, b) => b.engagement - a.engagement);
-    
-    console.log(`📊 [AUTOPILOT] Found ${qualifiedVideos.length} high-engagement videos`);
-    
-    // STEP 5: Get last 30 POSTED videos (not date-based)
-    const last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
-    
-    let selectedVideos = [];
-    let scheduledPosts = [];
-    const maxPosts = settings.maxPosts || 5; // Use configured maxPosts setting
-    
-    console.log(`🎯 [AUTOPILOT] Looking for up to ${maxPosts} videos to queue...`);
+// Settings endpoints
+
+console.log('✅ AutoPilot routes registered directly in server.js');
     
     // STEP 6: Find unique videos (not posted, not visually similar)
     for (const video of qualifiedVideos) {
