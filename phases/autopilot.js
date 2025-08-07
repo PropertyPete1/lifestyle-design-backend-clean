@@ -195,7 +195,7 @@ async function queueVideoForPosting(postData, SchedulerQueueModel) {
     
     const queuedPost = new SchedulerQueueModel({
       platform: postData.platform,
-      videoUrl: postData.videoUrl,
+      s3Url: postData.videoUrl, // Save as s3Url to match schema
       caption: postData.caption,
       audio: postData.audio,
       scheduledTime: postData.scheduledTime,
@@ -456,7 +456,7 @@ async function queueVideoForPosting(postData, SchedulerQueueModel) {
     
     const queuedPost = new SchedulerQueueModel({
       platform: postData.platform,
-      videoUrl: postData.videoUrl,
+      s3Url: postData.videoUrl, // Save as s3Url to match schema
       caption: postData.caption,
       audio: postData.audio,
       scheduledTime: postData.scheduledTime,
