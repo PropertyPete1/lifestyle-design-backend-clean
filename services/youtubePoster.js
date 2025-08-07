@@ -5,10 +5,6 @@
 
 const fetch = require('node-fetch');
 const FormData = require('form-data');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-const sharp = require('sharp');
-ffmpeg.setFfmpegPath(ffmpegPath);
 
 /**
  * Refresh YouTube access token
@@ -89,35 +85,6 @@ async function postToYouTube(options) {
     console.log('⬇️ [YOUTUBE] Downloading video from S3...');
     const videoResponse = await fetch(videoUrl);
     const videoBuffer = await videoResponse.buffer();
-
-    // Extract first-frame thumbnail (JPEG)
-    console.log('🖼️ [YOUTUBE] Extracting first-frame thumbnail...');
-    const { createWriteStream, promises: fsPromises } = require('fs');
-    const { mkdtemp, unlink } = fsPromises;
-    const os = require('os');
-    const path = require('path');
-    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'yt-thumb-'));
-    const inputPath = path.join(tmpDir, 'input.mp4');
-    const outputThumb = path.join(tmpDir, 'thumb.jpg');
-    await fsPromises.writeFile(inputPath, videoBuffer);
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .on('end', resolve)
-        .on('error', reject)
-        .screenshots({
-          count: 1,
-          timemarks: ['0.5'],
-          filename: 'thumb.jpg',
-          folder: tmpDir,
-          size: '720x?' // reasonable size
-        });
-    });
-
-    // Ensure reasonable quality via sharp
-    const thumbBuffer = await sharp(outputThumb)
-      .jpeg({ quality: 85 })
-      .toBuffer();
     
     // Build YouTube metadata: title, description, tags
     function extractHashtags(text = '') {
@@ -164,7 +131,7 @@ async function postToYouTube(options) {
     };
 
     console.log('📺 [YOUTUBE] Initiating resumable upload...');
-    const initResp = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+    const initResp = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status,recordingDetails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${freshAccessToken}`,
@@ -172,7 +139,13 @@ async function postToYouTube(options) {
         'X-Upload-Content-Type': 'video/mp4',
         'X-Upload-Content-Length': String(videoBuffer.length)
       },
-      body: JSON.stringify(initMetadata)
+      body: JSON.stringify({
+        ...initMetadata,
+        recordingDetails: {
+          locationDescription: 'Texas',
+          location: { latitude: 31.0, longitude: -100.0, altitude: 0 }
+        }
+      })
     });
     if (!initResp.ok) {
       const t = await initResp.text();
@@ -205,38 +178,7 @@ async function postToYouTube(options) {
     }
     
     console.log('✅ [YOUTUBE] Video uploaded successfully:', uploadData.id);
-
-    // Upload custom thumbnail (retry after processing for Shorts)
-    const trySetThumbnail = async (attempt) => {
-      console.log(`🖼️ [YOUTUBE] Setting custom thumbnail (attempt ${attempt})...`);
-      const thumbForm = new FormData();
-      thumbForm.append('media', thumbBuffer, { filename: 'thumbnail.jpg', contentType: 'image/jpeg' });
-      const resp = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${uploadData.id}&uploadType=multipart`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${freshAccessToken}`,
-          ...thumbForm.getHeaders(),
-        },
-        body: thumbForm,
-      });
-      if (!resp.ok) {
-        const td = await resp.text();
-        console.warn(`⚠️ [YOUTUBE] Thumbnail upload failed (attempt ${attempt}):`, td);
-        return false;
-      }
-      console.log('✅ [YOUTUBE] Thumbnail set successfully');
-      return true;
-    };
-
-    let thumbOk = await trySetThumbnail(1);
-    if (!thumbOk) {
-      for (let a = 2; a <= 4; a++) {
-        console.log('⏳ [YOUTUBE] Waiting 30s before retrying thumbnail...');
-        await new Promise(r => setTimeout(r, 30000));
-        thumbOk = await trySetThumbnail(a);
-        if (thumbOk) break;
-      }
-    }
+    // No custom thumbnail — rely on first-frame ( Shorts behavior )
     
     return {
       success: true,
