@@ -51,7 +51,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const scrapedVideos = await scrapeInstagramEngagement(
       settings.igBusinessId, 
       settings.instagramToken, 
-      200
+      1000
     );
     
     console.log(`✅ [IG SCRAPER] Scraped ${scrapedVideos.length} videos`);

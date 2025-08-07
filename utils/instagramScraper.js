@@ -40,6 +40,11 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
           const estimatedViews = likes * 75; // Conservative estimate
           const engagement = estimatedViews + likes + comments;
           
+          // Debug: Log some videos to see what we're getting
+          if (videos.length < 10) {
+            console.log(`📊 [DEBUG] Video ${videos.length + 1}: ${likes} likes, ${comments} comments, ${estimatedViews} est. views, ${engagement} engagement`);
+          }
+          
           videos.push({
             id: media.id,
             url: media.media_url,
