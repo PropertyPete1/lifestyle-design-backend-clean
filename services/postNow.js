@@ -9,7 +9,7 @@
  */
 
 const mongoose = require('mongoose');
-const { compareCaptionSimilarity } = require('string-similarity');
+const stringSimilarity = require('string-similarity');
 
 /**
  * Fetch last 30 Instagram posts directly from Instagram API
@@ -166,7 +166,11 @@ async function executePostNow(settings) {
       }
 
       const isDuplicateVisual = last30Hashes.includes(hash);
-      const isDuplicateCaption = last30Captions.some(c => compareCaptionSimilarity(video.caption, c) > 0.9);
+      const isDuplicateCaption = last30Captions.some((c) => {
+        const a = (video.caption || '').toLowerCase();
+        const b = (c || '').toLowerCase();
+        return stringSimilarity.compareTwoStrings(a, b) > 0.9;
+      });
       const isDuplicateAudio = last30AudioIds.includes(video.audioId);
 
       if (isDuplicateVisual || isDuplicateCaption || isDuplicateAudio) {
