@@ -406,28 +406,49 @@ app.get('/api/test/youtube', async (req, res) => {
 });
 
 // POST NOW - Step-by-step flow with visual hash + caption similarity protection
+// Non-blocking trigger: enqueue a background job and respond immediately
 app.post('/api/postNow', async (req, res) => {
   try {
-    console.log("📲 [POST NOW] Starting step-by-step process...");
+    console.log("📲 [POST NOW] Trigger received → enqueue background job");
 
     const settings = await SettingsModel.findOne({});
     if (!settings || !settings.instagramToken || !settings.igBusinessId) {
       return res.status(400).json({ error: 'Missing Instagram credentials in settings' });
     }
 
-    // Use the new step-by-step service
+    const { enqueue, getQueueSnapshot } = require('./services/jobQueue');
     const { executePostNow } = require('./services/postNow');
-    const result = await executePostNow(settings);
 
-    return res.status(200).json(result);
+    const jobId = enqueue(async () => {
+      return await executePostNow(settings);
+    });
 
+    const snapshot = getQueueSnapshot();
+    return res.status(202).json({
+      success: true,
+      message: 'Post Now job enqueued',
+      jobId,
+      queue: snapshot,
+    });
   } catch (err) {
     console.error("❌ [POST NOW ERROR]", err);
     res.status(500).json({ 
-      error: "Internal server error", 
+      error: "Internal server error",
       details: err.message,
       success: false 
     });
+  }
+});
+
+// Job status endpoint (optional; helpful for debugging UI)
+app.get('/api/postNow/status/:jobId', (req, res) => {
+  try {
+    const { getJobStatus } = require('./services/jobQueue');
+    const status = getJobStatus(req.params.jobId);
+    if (!status) return res.status(404).json({ error: 'Job not found' });
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get job status', details: err.message });
   }
 });
 
