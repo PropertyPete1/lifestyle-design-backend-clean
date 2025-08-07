@@ -65,15 +65,55 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No high-engagement videos found' };
     }
     
-    // STEP 3: Filter duplicates using visual thumbnail analysis
-    console.log('🔍 [AUTOPILOT] Step 3: Filtering duplicates using visual thumbnail analysis...');
-    // Filter duplicates by thumbnail hash within scraped videos
+    // STEP 3: Get last 30 posts from your actual Instagram feed to avoid reposting recent content
+    console.log('🔍 [AUTOPILOT] Step 3: Checking last 30 posts from your Instagram feed...');
+    let recentPostHashes = new Set();
+    
+    try {
+      // Fetch last 30 posts from your Instagram account using Graph API
+      const instagramUrl = `https://graph.instagram.com/v21.0/${settings.igBusinessId}/media?fields=id,thumbnail_url,timestamp&limit=30&access_token=${settings.instagramToken}`;
+      const fetch = require('node-fetch');
+      const response = await fetch(instagramUrl);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const recentPosts = data.data || [];
+        
+        console.log(`📱 [INSTAGRAM API] Found ${recentPosts.length} recent posts from your Instagram`);
+        
+        // Generate hashes for recent posts to compare against
+        const { generateThumbnailHash } = require('../utils/postHistory');
+        for (const post of recentPosts) {
+          if (post.thumbnail_url) {
+            const hash = await generateThumbnailHash(post.thumbnail_url);
+            recentPostHashes.add(hash);
+            console.log(`📱 [RECENT POST] Hash: ${hash} for post ${post.id}`);
+          }
+        }
+        
+        console.log(`🛡️ [RECENT POSTS] ${recentPostHashes.size} recent post hashes to avoid`);
+      } else {
+        console.log('⚠️ [INSTAGRAM API] Failed to fetch recent posts, proceeding without recent post filtering');
+      }
+    } catch (error) {
+      console.log('⚠️ [INSTAGRAM API] Error fetching recent posts:', error.message);
+    }
+    
+    // STEP 4: Filter out videos that match recent posts AND remove duplicates within current batch
+    console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates using visual thumbnail analysis...');
     const seenHashes = new Set();
     const uniqueVideos = [];
     
-    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos for duplicate thumbnails...`);
+    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos against recent posts and duplicates...`);
     
     for (const video of qualifiedVideos) {
+      // Check if this video was recently posted
+      if (recentPostHashes.has(video.thumbnailHash)) {
+        console.log(`🚫 [RECENT POST FILTER] Skipping recently posted video: ${video.id} (hash: ${video.thumbnailHash})`);
+        continue;
+      }
+      
+      // Check for duplicates within current batch
       if (seenHashes.has(video.thumbnailHash)) {
         console.log(`⏭️ [THUMBNAIL FILTER] Skipping duplicate thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
         continue;
@@ -81,17 +121,17 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       
       seenHashes.add(video.thumbnailHash);
       uniqueVideos.push(video);
-      console.log(`✅ [THUMBNAIL FILTER] Unique thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
+      console.log(`✅ [THUMBNAIL FILTER] Unique video (not in recent 30): ${video.id} (hash: ${video.thumbnailHash})`);
     }
     
-    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos with unique thumbnails`);
+    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos that are NOT in recent 30 posts`);
     
     if (uniqueVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No unique videos found');
       return { success: false, message: 'All videos already posted or similar' };
     }
     
-    // STEP 4: Select videos to process (up to maxPosts setting)
+    // STEP 5: Select videos to process (up to maxPosts setting)
     const maxPosts = settings.maxPosts || 5;
     const videosToProcess = uniqueVideos.slice(0, maxPosts);
     
@@ -104,7 +144,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     
     console.log(`🔄 [AUTOPILOT] Processing ${videosToProcess.length} selected videos...`);
     
-    // STEP 5: Process each video
+    // STEP 6: Process each video
     let processedCount = 0;
     for (let i = 0; i < videosToProcess.length; i++) {
       const video = videosToProcess[i];
