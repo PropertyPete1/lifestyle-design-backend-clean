@@ -270,6 +270,3 @@ module.exports = {
   getQueueStats,
   triggerAutopilotRefill
 };
-  getQueueStats,
-  triggerAutopilotRefill
-};
