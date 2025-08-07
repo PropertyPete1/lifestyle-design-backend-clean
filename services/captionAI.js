@@ -370,3 +370,70 @@ module.exports = {
   generateSmartCaptionWithKey,
   findTrendingAudio,
 };
+
+/**
+ * Build a full Instagram caption from the original text while refreshing hashtags
+ * - Keeps the full description (no forced 150-char truncation)
+ * - Removes dashes/bullets and normalizes spacing
+ * - Replaces up to 2 user hashtags with trending ones (env TRENDING_HASHTAGS or defaults)
+ * - Caps hashtags to a safe limit and enforces IG 2,200-char description limit
+ */
+function buildInstagramCaption(originalCaption = '', trendingEnv = '') {
+  const cleanedText = (originalCaption || '')
+    .replace(/[\-–—•]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const extractHashtags = (text = '') => (text.match(/#[A-Za-z0-9_]+/g) || [])
+    .map(h => h.replace('#', '').toLowerCase());
+  const userTags = Array.from(new Set(extractHashtags(originalCaption)));
+
+  const trendingList = (trendingEnv || process.env.TRENDING_HASHTAGS || '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+  const defaultTrending = ['realestate','reels','viral','architecture','luxuryhomes','interiordesign','realtor','dreamhome','property','househunting'];
+  const trending = trendingList.length ? trendingList : defaultTrending;
+
+  // Replace up to 2 of the user tags with trending not already included
+  const finalTags = [...userTags];
+  let replaced = 0;
+  for (const t of trending) {
+    if (replaced >= 2) break;
+    if (!finalTags.includes(t)) {
+      // If we have some user tag to swap, replace last one; else append
+      if (finalTags.length) {
+        finalTags[finalTags.length - 1 - replaced] = t;
+      } else {
+        finalTags.push(t);
+      }
+      replaced += 1;
+    }
+  }
+
+  // Add more trending until we reach ~20 tags max
+  for (const t of trending) {
+    if (finalTags.length >= 20) break;
+    if (!finalTags.includes(t)) finalTags.push(t);
+  }
+
+  const hashtagsLine = finalTags.map(t => `#${t}`).join(' ');
+  let composed = cleanedText;
+  if (hashtagsLine) composed = `${cleanedText}\n\n${hashtagsLine}`;
+
+  // Enforce IG 2,200-char limit: prefer keeping text; trim hashtags if needed
+  const MAX_IG = 2200;
+  if (composed.length > MAX_IG) {
+    // Try reducing hashtags first
+    let tags = finalTags.slice();
+    let text = cleanedText;
+    while (tags.length && (text.length + 2 + tags.join(' ').length) > MAX_IG) {
+      tags.pop();
+    }
+    composed = tags.length ? `${text}\n\n${tags.map(t => `#${t}`).join(' ')}` : text.slice(0, MAX_IG);
+  }
+
+  return composed;
+}
+
+module.exports.buildInstagramCaption = buildInstagramCaption;

@@ -268,12 +268,13 @@ async function executePostNow(settings) {
     //////////////////////////////////
     
     console.log('✏️ [STEP 5] Generating smart caption...');
-    const { generateSmartCaptionWithKey } = require('./captionAI');
-    let finalCaption = await generateSmartCaptionWithKey(
+    const { generateSmartCaptionWithKey, buildInstagramCaption } = require('./captionAI');
+    // Generate short rewrite then expand/compose with hashtags for IG
+    const rewritten = await generateSmartCaptionWithKey(
       selectedVideo.caption || '',
       (settings && settings.openaiApiKey) ? settings.openaiApiKey : null
     );
-    finalCaption = finalCaption.replace(/[-–—]/g, "").trim(); // Remove dashes
+    let finalCaption = buildInstagramCaption(rewritten || selectedVideo.caption || '');
     console.log(`✅ [STEP 5] Generated caption: ${finalCaption.substring(0, 100)}...`);
 
     //////////////////////////////////
