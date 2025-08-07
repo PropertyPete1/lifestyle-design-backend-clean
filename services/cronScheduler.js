@@ -134,31 +134,34 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
           await triggerAutopilotRefill(SchedulerQueueModel, SettingsModel);
           
         } else {
-          // Mark as failed
+          // ✅ Keep failed posts in queue for retry (don't mark as failed)
           await SchedulerQueueModel.updateOne(
             { _id: post._id },
             { 
-              status: 'failed',
-              error: result.error,
-              failedAt: new Date()
+              status: 'scheduled', // Reset to scheduled for retry
+              lastAttempt: new Date(),
+              retryCount: (post.retryCount || 0) + 1
             }
           );
           
-          console.error(`❌ [CRON] Failed to post ${post._id}: ${result.error}`);
+          console.warn(`⚠️ [SKIPPED] Instagram post failed. Leaving post in queue for retry. Attempt ${(post.retryCount || 0) + 1}`);
         }
         
       } catch (postError) {
         console.error(`❌ [CRON] Error executing post ${post._id}:`, postError);
         
-        // Mark as failed
+        // ✅ Keep failed posts in queue for retry
         await SchedulerQueueModel.updateOne(
           { _id: post._id },
           { 
-            status: 'failed',
-            error: postError.message,
-            failedAt: new Date()
+            status: 'scheduled', // Reset to scheduled for retry
+            lastAttempt: new Date(),
+            retryCount: (post.retryCount || 0) + 1,
+            lastError: postError.message
           }
         );
+        
+        console.warn(`⚠️ [SKIPPED] Post execution failed. Leaving post in queue for retry.`);
       }
       
       // Small delay between posts to avoid rate limiting

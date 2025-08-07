@@ -22,12 +22,14 @@ async function postToInstagram(postData, settings) {
       throw new Error('Missing Instagram credentials');
     }
     
-    const { s3Url, caption, trendingAudio } = postData;
+    const { videoUrl, caption, trendingAudio } = postData;
+    
+    console.log(`🔗 [IG DEBUG] Video URL: ${videoUrl}`);
     
     // ✅ Step 1: Create container
     const containerParams = new URLSearchParams({
       media_type: 'REELS',
-      video_url: s3Url, // ✅ must be public S3 link
+      video_url: videoUrl, // ✅ must be public S3 link
       caption: caption,
       access_token: settings.instagramToken,
       share_to_feed: 'true'
