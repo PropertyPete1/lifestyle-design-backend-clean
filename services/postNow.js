@@ -74,6 +74,14 @@ async function downloadVideoBuffer(videoUrl) {
 }
 
 /**
+ * Compare durations with ±1 second tolerance
+ */
+function isDurationSimilar(a, b) {
+  if (a == null || b == null) return false;
+  return Math.abs(Math.round(a) - Math.round(b)) <= 1;
+}
+
+/**
  * Execute Post Now - Complete logic with smart candidate selection
  */
 async function executePostNow(settings) {
@@ -139,8 +147,8 @@ async function executePostNow(settings) {
         console.log(`⛔ Skipping video ${video.id} - exact ID match`);
         continue;
       }
-      if (last30Durations.includes(video.duration)) {
-        console.log(`⛔ Skipping video ${video.id} - duration match`);
+      if (last30Durations.some(d => isDurationSimilar(d, video.duration))) {
+        console.log(`⛔ Skipping video ${video.id} - duration match (±1s)`);
         continue;
       }
 
