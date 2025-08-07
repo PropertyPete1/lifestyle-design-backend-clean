@@ -76,16 +76,25 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500, i
           }
           
           videos.push(videoObject);
+
+          // Stop early if we reached the requested limit while processing this page
+          if (videos.length >= limit) {
+            break;
+          }
         }
       }
       
-      // Get next page URL
-      nextPageUrl = data.paging?.next || null;
+      // Get next page URL (only if we still need more)
+      nextPageUrl = (videos.length < limit) ? (data.paging?.next || null) : null;
       
       // Rate limiting - wait between requests
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
+    // Ensure we never exceed the requested limit
+    if (videos.length > limit) {
+      videos.length = limit;
+    }
     console.log(`✅ [IG SCRAPER] Scraped ${videos.length} videos`);
     return videos;
     

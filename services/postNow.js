@@ -103,13 +103,18 @@ async function executePostNow(settings) {
 
     const last30 = await fetchLast30InstagramPosts(settings); // [{ id, thumbnailUrl, caption, audioId, duration }]
     
-    const last30Hashes = await Promise.all(
-      last30.map(async (post) => {
+    // Build hashes strictly sequentially to minimize memory and avoid bursts
+    const last30Hashes = [];
+    for (const post of last30) {
+      try {
         const buffer = await downloadVideoBuffer(post.url);
         const frame = await extractFirstFrame(buffer);
-        return await generateVisualHash(frame);
-      })
-    );
+        const h = await generateVisualHash(frame);
+        last30Hashes.push(h);
+      } catch (e) {
+        console.warn('⚠️ [STEP 1] Could not hash past post, skipping:', e.message);
+      }
+    }
     
     const last30Captions = last30.map(p => p.caption);
     const last30Durations = last30.map(p => p.duration);
@@ -153,7 +158,7 @@ async function executePostNow(settings) {
         continue;
       }
 
-      // Download only when cheap checks pass; prefer hashing from thumbnail URL to avoid full video in memory
+      // Download only when cheap checks pass; prefer lightweight hash first to avoid full video in memory
       let hash;
       try {
         // Use deterministic lightweight hash (URL-based) to avoid image downloads
@@ -185,7 +190,7 @@ async function executePostNow(settings) {
     }
 
     // 🧱 Failsafe
-    if (!selectedVideo || !selectedBuffer) {
+    if (!selectedVideo) {
       console.log("❌ No unique video found after checking candidates.");
       return {
         success: false,
