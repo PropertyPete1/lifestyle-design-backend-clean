@@ -88,7 +88,7 @@ async function uploadBufferToS3(buffer, s3Key, settingsOrContentType = 'video/mp
       Key: s3Key,
       Body: buffer,
       ContentType: contentType,
-      ACL: 'public-read', // Make sure URL is public
+      // Removed ACL: 'public-read' - ACLs disabled on bucket
     };
 
     const result = await s3Instance.upload(params).promise();
