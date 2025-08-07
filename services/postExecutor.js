@@ -7,6 +7,51 @@ const fetch = require('node-fetch');
 const FormData = require('form-data');
 
 /**
+ * Wait for Instagram media to be ready for publishing
+ * @param {string} containerId - Instagram media container ID
+ * @param {string} accessToken - Instagram access token
+ */
+async function waitForInstagramMediaReady(containerId, accessToken) {
+  console.log('🔍 [IG STATUS] Checking media readiness...');
+  
+  const maxAttempts = 12; // 12 attempts = up to 2 minutes additional wait
+  const delayMs = 10000; // 10 seconds between checks
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const statusResponse = await fetch(
+        `https://graph.facebook.com/v18.0/${containerId}?fields=status_code&access_token=${accessToken}`
+      );
+      
+      const statusData = await statusResponse.json();
+      console.log(`🔍 [IG STATUS] Attempt ${attempt}/${maxAttempts} - Status:`, statusData);
+      
+      if (statusData.status_code === 'FINISHED') {
+        console.log('✅ [IG STATUS] Media is ready for publishing!');
+        return;
+      }
+      
+      if (statusData.status_code === 'ERROR') {
+        throw new Error(`Instagram media processing failed: ${JSON.stringify(statusData)}`);
+      }
+      
+      if (attempt < maxAttempts) {
+        console.log(`⏳ [IG STATUS] Media not ready yet (${statusData.status_code}), waiting ${delayMs/1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    } catch (error) {
+      console.error(`❌ [IG STATUS] Error checking media status (attempt ${attempt}):`, error.message);
+      if (attempt === maxAttempts) {
+        throw new Error(`Failed to verify media readiness after ${maxAttempts} attempts`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  
+  throw new Error('Instagram media did not become ready within the expected timeframe');
+}
+
+/**
  * Post video to Instagram using Graph API
  * @param {Object} postData - Post data from queue
  * @param {Object} settings - User settings with tokens
@@ -92,6 +137,9 @@ async function postToInstagram(postData, settings) {
     }
     
     console.log('📦 [INSTAGRAM] Media container created:', containerData.id);
+    
+    // ✅ Step 1.5: Check media status before publishing (NEW FIX)
+    await waitForInstagramMediaReady(containerData.id, settings.instagramToken);
     
     // ✅ Step 2: Publish the post
     const publishParams = new URLSearchParams({
