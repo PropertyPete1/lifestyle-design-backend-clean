@@ -33,6 +33,12 @@ async function uploadToS3(localPath, s3Key, settings) {
   try {
     console.log('☁️ [S3 UPLOAD] Starting upload:', s3Key);
     
+    // 🛑 Check if file exists first
+    if (!fs.existsSync(localPath)) {
+      console.error(`❌ S3 Upload Failed: File does not exist at ${localPath}`);
+      return null;
+    }
+    
     // Configure AWS with user's credentials
     configureAWS(settings);
     
@@ -59,7 +65,7 @@ async function uploadToS3(localPath, s3Key, settings) {
     
   } catch (error) {
     console.error('❌ [S3 UPLOAD ERROR]', error);
-    throw new Error(`S3 upload failed: ${error.message}`);
+    return null;
   }
 }
 
@@ -99,7 +105,7 @@ async function uploadBufferToS3(buffer, s3Key, settings) {
     
   } catch (error) {
     console.error('❌ [S3 BUFFER UPLOAD ERROR]', error);
-    throw new Error(`S3 buffer upload failed: ${error.message}`);
+    return null;
   }
 }
 
