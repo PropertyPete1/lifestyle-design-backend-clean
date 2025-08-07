@@ -46,6 +46,11 @@ async function postToInstagram(postData, settings) {
     
     console.log('✅ [VALIDATION] Video URL is valid, proceeding with Instagram API...');
     
+    // ✅ Wait for S3 media readiness (fixes "media is not ready")
+    console.log('⏰ [IG] Waiting 8 seconds for S3 media readiness...');
+    await new Promise((resolve) => setTimeout(resolve, 8000)); // wait 8 sec
+    console.log('✅ [IG] Media readiness wait completed');
+    
     // ✅ Step 1: Create container
     const containerParams = new URLSearchParams({
       media_type: 'REELS',

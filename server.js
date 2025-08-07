@@ -315,6 +315,12 @@ app.post('/api/autopilot/run', async (req, res) => {
             throw new Error('S3 upload returned null URL');
           }
           
+          // ✅ Validate S3 URL format
+          if (!s3Url.startsWith('https://')) {
+            console.error('❌ [S3 ERROR] Invalid S3 URL format:', s3Url);
+            throw new Error('S3 upload returned invalid URL format');
+          }
+          
           console.log('✅ [AUTOPILOT] S3 upload successful:', s3Url);
         } catch (downloadError) {
           console.error('❌ [AUTOPILOT] Video download/upload failed:', downloadError.message);
