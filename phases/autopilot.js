@@ -207,6 +207,13 @@ async function queueVideoForPosting(postData, SchedulerQueueModel) {
   try {
     console.log(`📋 [QUEUE] Queueing ${postData.platform} post for ${postData.scheduledTime}`);
     
+    console.log('🔍 [DEBUG] Saving to queue:', {
+      platform: postData.platform,
+      s3Url: postData.videoUrl,
+      thumbnailUrl: postData.thumbnailUrl,
+      videoUrl: postData.videoUrl
+    });
+    
     const queuedPost = new SchedulerQueueModel({
       platform: postData.platform,
       s3Url: postData.videoUrl, // Save as s3Url to match schema
@@ -481,6 +488,13 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
 async function queueVideoForPosting(postData, SchedulerQueueModel) {
   try {
     console.log(`📋 [QUEUE] Queueing ${postData.platform} post for ${postData.scheduledTime}`);
+    
+    console.log('🔍 [DEBUG] Saving to queue:', {
+      platform: postData.platform,
+      s3Url: postData.videoUrl,
+      thumbnailUrl: postData.thumbnailUrl,
+      videoUrl: postData.videoUrl
+    });
     
     const queuedPost = new SchedulerQueueModel({
       platform: postData.platform,
