@@ -96,10 +96,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const s3Key = generateS3Key('instagram');
     const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
     
-    // STEP 7.5: Use Instagram thumbnail (reliable and fast)
-    console.log('📸 [AUTOPILOT] Step 7.5: Using Instagram thumbnail...');
-    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Instagram's original thumbnail
-    console.log('✅ [AUTOPILOT] Thumbnail URL:', extractedThumbnailUrl);
+    // STEP 7.5: Set thumbnail to S3 video URL (Instagram uses first frame, no separate thumbnail)
+    console.log('📸 [AUTOPILOT] Step 7.5: Using S3 video URL for thumbnail preview...');
+    let extractedThumbnailUrl = s3Url; // Use video URL since Instagram doesn't provide separate thumbnails for first-frame
+    console.log('✅ [AUTOPILOT] Thumbnail URL (S3 Video):', extractedThumbnailUrl);
     
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
@@ -363,10 +363,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const s3Key = generateS3Key('instagram');
     const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
     
-    // STEP 7.5: Use Instagram thumbnail (reliable and fast)
-    console.log('📸 [AUTOPILOT] Step 7.5: Using Instagram thumbnail...');
-    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Instagram's original thumbnail
-    console.log('✅ [AUTOPILOT] Thumbnail URL:', extractedThumbnailUrl);
+    // STEP 7.5: Set thumbnail to S3 video URL (Instagram uses first frame, no separate thumbnail)
+    console.log('📸 [AUTOPILOT] Step 7.5: Using S3 video URL for thumbnail preview...');
+    let extractedThumbnailUrl = s3Url; // Use video URL since Instagram doesn't provide separate thumbnails for first-frame
+    console.log('✅ [AUTOPILOT] Thumbnail URL (S3 Video):', extractedThumbnailUrl);
     
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
