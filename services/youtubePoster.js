@@ -147,37 +147,57 @@ async function postToYouTube(options) {
     const hashtagsLine = limitedTags.map(t => `#${t}`).join(' ');
     const description = `${caption}\n\n${hashtagsLine}`.slice(0, 4900); // YouTube description limit ~5000
 
-    // Create form data for upload (multipart)
-    const formData = new FormData();
-    formData.append('snippet', JSON.stringify({
-      title,
-      description,
-      tags: limitedTags,
-      categoryId: '26' // How-to & Style category
-    }));
-    formData.append('status', JSON.stringify({
-      privacyStatus: 'public'
-    }));
-    formData.append('media', videoBuffer, {
-      filename: 'video.mp4',
-      contentType: 'video/mp4'
-    });
-    
-    const uploadResponse = await fetch(
-      'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${freshAccessToken}`,
-          ...formData.getHeaders()
-        },
-        body: formData
+    // Use Resumable upload to avoid multipart issues
+    const initMetadata = {
+      snippet: {
+        title,
+        description,
+        tags: limitedTags,
+        categoryId: '26'
+      },
+      status: {
+        privacyStatus: 'public'
       }
-    );
-    
-    const uploadData = await uploadResponse.json();
-    
-    if (!uploadResponse.ok) {
+    };
+
+    console.log('📺 [YOUTUBE] Initiating resumable upload...');
+    const initResp = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${freshAccessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': 'video/mp4',
+        'X-Upload-Content-Length': String(videoBuffer.length)
+      },
+      body: JSON.stringify(initMetadata)
+    });
+    if (!initResp.ok) {
+      const t = await initResp.text();
+      throw new Error(`YouTube init failed: ${t}`);
+    }
+    const uploadUrl = initResp.headers.get('location');
+    if (!uploadUrl) throw new Error('YouTube init missing upload URL');
+
+    console.log('📺 [YOUTUBE] Uploading video bytes...');
+    const contentRange = `bytes 0-${videoBuffer.length - 1}/${videoBuffer.length}`;
+    const putResp = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${freshAccessToken}`,
+        'Content-Type': 'video/mp4',
+        'Content-Length': String(videoBuffer.length),
+        'Content-Range': contentRange
+      },
+      body: videoBuffer
+    });
+    let uploadData;
+    try {
+      uploadData = await putResp.json();
+    } catch (_) {
+      const txt = await putResp.text();
+      throw new Error(`YouTube upload response not JSON: ${txt.slice(0, 200)}`);
+    }
+    if (!putResp.ok) {
       throw new Error(`YouTube upload failed: ${uploadData.error?.message || 'Unknown error'}`);
     }
     
