@@ -135,7 +135,7 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
           await SchedulerQueueModel.updateOne(
             { _id: post._id },
             { 
-              status: 'completed',
+              status: 'posted',
               postedAt: new Date(),
               postId: result.postId,
               postUrl: result.url

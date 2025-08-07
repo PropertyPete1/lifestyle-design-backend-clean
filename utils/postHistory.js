@@ -16,7 +16,10 @@ async function getLast30PostedVideos(platform, SchedulerQueueModel) {
     const postedVideos = await SchedulerQueueModel
       .find({ 
         platform: platform,
-        status: 'posted' // Only get successfully posted videos
+        $or: [
+          { status: 'posted' },
+          { status: 'completed' } // Include old posts marked as 'completed' before the fix
+        ]
       })
       .sort({ postedAt: -1 }) // Most recent first
       .limit(30)
