@@ -41,10 +41,15 @@ async function getLast30InstagramPosts(settings) {
       if (post.media_type === 'VIDEO' && post.thumbnail_url) {
         try {
           const thumbnailHash = await generateThumbnailHash(post.thumbnail_url);
+          const crypto = require('crypto');
+          const caption = post.caption || '';
+          const fingerprint = crypto.createHash('md5').update(`${caption.toLowerCase().trim()}|${post.thumbnail_url}`).digest('hex');
+          
           postsWithHashes.push({
             id: post.id,
             thumbnailHash,
-            caption: post.caption || '',
+            fingerprint,
+            caption,
             timestamp: post.timestamp,
             permalink: post.permalink
           });
@@ -55,6 +60,7 @@ async function getLast30InstagramPosts(settings) {
     }
     
     console.log(`📱 [INSTAGRAM API] Generated hashes for ${postsWithHashes.length} video posts`);
+    console.log(`📊 [DEBUG] Instagram posts found: ${postsWithHashes.length} videos with fingerprints`);
     return postsWithHashes;
     
   } catch (error) {
