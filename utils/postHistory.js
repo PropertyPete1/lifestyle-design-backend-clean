@@ -50,6 +50,12 @@ function isAlreadyPosted(fingerprint, postedVideos) {
  */
 function looksSimilar(video, postedVideos) {
   return postedVideos.some(posted => {
+    // ✅ PRIORITY CHECK: Same originalVideoId = same source video (even if enhanced)
+    if (posted.originalVideoId && video.id && posted.originalVideoId === video.id) {
+      console.log(`🚫 [DUPLICATE] Same originalVideoId detected: ${video.id} (possibly enhanced version)`);
+      return true;
+    }
+    
     // Check thumbnail similarity
     if (posted.thumbnailHash === video.thumbnailHash) {
       return true;
