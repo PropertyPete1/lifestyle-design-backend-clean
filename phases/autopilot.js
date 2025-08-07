@@ -60,10 +60,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No videos found' };
     }
     
-    // STEP 2: Filter by engagement (≥ 10,000)
+    // STEP 2: Filter by engagement (≥ 1,000 temporarily to test)
     console.log('📊 [AUTOPILOT] Step 2: Filtering by engagement...');
     const qualifiedVideos = scrapedVideos
-      .filter(v => v.engagement >= 10000)
+      .filter(v => v.engagement >= 1000)
       .sort((a, b) => b.engagement - a.engagement); // Highest engagement first
     
     console.log(`📊 [AUTOPILOT] Found ${qualifiedVideos.length} high-engagement videos`);
