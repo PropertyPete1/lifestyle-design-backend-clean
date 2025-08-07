@@ -24,8 +24,8 @@ const settingsSchema = new mongoose.Schema({
   schedulerType: { type: String, default: 'daily' },
   repostDelay: { type: Number, default: 2 },
   postToYouTube: { type: Boolean, default: false },
-}, { timestamps: true, collection: 'SettingsClean' });
+}, { timestamps: true, collection: 'settings' });
 
-const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
+const SettingsModel = mongoose.model('settings', settingsSchema);
 
 module.exports = SettingsModel;
