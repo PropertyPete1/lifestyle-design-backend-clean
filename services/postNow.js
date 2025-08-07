@@ -146,7 +146,25 @@ async function executePostNow(settings) {
     //////////////////////////////////////////////////////
 
     // Fetch candidates WITHOUT computing thumbnail hashes to save memory/CPU
+    // Start with own feed, then optionally merge discovery sources to broaden pool
     let candidates = await scrapeInstagramVideos(settings); // [{ id, videoUrl, caption, engagement, audioId, duration }]
+    try {
+      const discoveryUsernames = Array.isArray(settings.discoveryUsernames) ? settings.discoveryUsernames : [];
+      if (discoveryUsernames.length > 0) {
+        const { scrapeDiscoveryEngagement } = require('../utils/instagramScraper');
+        const discovered = await scrapeDiscoveryEngagement(
+          settings.igBusinessId,
+          settings.instagramToken,
+          discoveryUsernames,
+          500
+        );
+        if (Array.isArray(discovered) && discovered.length) {
+          candidates = candidates.concat(discovered);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ [STEP 2] Discovery merge skipped:', e.message);
+    }
     
     candidates = candidates
       .filter(v => v.engagement >= 10000) // ✅ Only use high-engagement

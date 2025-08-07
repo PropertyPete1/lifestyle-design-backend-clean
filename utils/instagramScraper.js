@@ -105,6 +105,59 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500, i
 }
 
 /**
+ * Scrape videos from other public accounts via Business Discovery
+ * Uses settings.discoveryUsernames (array of IG usernames) if provided
+ */
+async function scrapeDiscoveryEngagement(businessId, accessToken, usernames = [], limit = 500) {
+  const results = [];
+  if (!Array.isArray(usernames) || usernames.length === 0) {
+    return results;
+  }
+  for (const username of usernames) {
+    try {
+      console.log(`🕵️ [DISCOVERY] Fetching media for @${username}`);
+      const url = `https://graph.facebook.com/v19.0/${businessId}?fields=business_discovery.username(${encodeURIComponent(username)}){media.limit(50){id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,play_count,timestamp,permalink,music_metadata}}&access_token=${accessToken}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (!response.ok) {
+        console.warn('⚠️ [DISCOVERY] API error for', username, data);
+        continue;
+      }
+      const mediaList = data?.business_discovery?.media?.data || [];
+      for (const media of mediaList) {
+        if (media.media_type !== 'VIDEO') continue;
+        const likes = media.like_count || 0;
+        const comments = media.comments_count || 0;
+        const estimatedViews = likes * 75;
+        const engagement = estimatedViews + likes + comments;
+        const audioId = media.music_metadata?.music_product_id || media.music_metadata?.artist_name || media.music_metadata?.song_name || null;
+        results.push({
+          id: media.id,
+          url: media.media_url,
+          thumbnailUrl: media.thumbnail_url,
+          caption: media.caption || '',
+          likes,
+          comments,
+          views: estimatedViews,
+          engagement,
+          timestamp: media.timestamp,
+          permalink: media.permalink,
+          audioId,
+          musicMetadata: media.music_metadata || null,
+        });
+        if (results.length >= limit) break;
+      }
+      if (results.length >= limit) break;
+      await new Promise((r) => setTimeout(r, 800));
+    } catch (err) {
+      console.warn('⚠️ [DISCOVERY] Error for', username, err.message);
+    }
+  }
+  console.log(`✅ [DISCOVERY] Collected ${results.length} videos from discovery`);
+  return results;
+}
+
+/**
  * Generate content fingerprint for duplicate detection
  * @param {string} caption - Video caption
  * @param {string} thumbnailUrl - Thumbnail URL
@@ -256,6 +309,7 @@ async function downloadInstagramVideo(videoUrl) {
 
 module.exports = {
   scrapeInstagramEngagement,
+  scrapeDiscoveryEngagement,
   generateFingerprint,
   generateThumbnailHash,
   downloadVideoFromInstagram,
