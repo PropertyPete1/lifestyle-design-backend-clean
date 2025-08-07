@@ -216,26 +216,43 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     console.log(`📝 ${recentCaptions.size} recent caption snippets`);
     console.log(`🆔 ${recentVideoIds.size} recent video IDs`);
     
-    // STEP 3: Find first unique high-engagement video with enhanced duplicate checking
+    // STEP 3: Find unique high-engagement video with PRE-DOWNLOAD hash verification
     let selectedVideo = null;
+    let selectedVideoBuffer = null;
+    let finalThumbnailHash = null;
+    
+    console.log('🔍 [POST NOW] Starting pre-download duplicate filtering...');
+    const crypto = require('crypto');
+    
     for (const video of scrapedVideos) {
       if (video.engagement < 10000) continue; // Skip low engagement
       
-      // 🧠 Multi-layer duplicate detection
-      const caption = (video.caption || "").trim().toLowerCase().substring(0, 50);
+      console.log(`🔍 [POST NOW] Testing video ${video.id} (${video.engagement} engagement)...`);
       
-      const isDuplicate = 
-        recentHashes.has(video.thumbnailHash) ||           // Visual similarity
-        recentCaptions.has(caption) ||                     // Caption similarity  
-        recentVideoIds.has(video.id);                      // Exact video ID match
+      // PRE-DOWNLOAD: Download video buffer to generate hash BEFORE committing to post
+      console.log('⬇️ [POST NOW] Pre-downloading for hash verification...');
+      const testBuffer = await downloadVideoFromInstagram(video.url);
+      const testHash = crypto.createHash('sha256').update(testBuffer).digest('hex').substring(0, 16);
       
-      if (isDuplicate) {
-        console.log(`⏭️ [POST NOW] Skipping duplicate: ${video.id} (hash: ${video.thumbnailHash}, caption: ${caption.substring(0, 20)}...)`);
+      // Check if this exact video hash exists in recent posts
+      const hashExists = recentHashes.has(video.thumbnailHash) || // Scraper hash
+                        recentVideoIds.has(video.id) ||            // Video ID match
+                        (await SchedulerQueueModel.findOne({       // Exact buffer hash match
+                          platform: 'instagram',
+                          status: 'posted',
+                          thumbnailHash: testHash
+                        }));
+      
+      if (hashExists) {
+        console.log(`⏭️ [POST NOW] Skipping duplicate: ${video.id} (hash: ${testHash})`);
         continue;
       }
       
+      // This video is unique - select it
       selectedVideo = video;
-      console.log(`✅ [POST NOW] Selected unique video: ${video.id} (${video.engagement} engagement)`);
+      selectedVideoBuffer = testBuffer;
+      finalThumbnailHash = testHash;
+      console.log(`✅ [POST NOW] Selected unique video: ${video.id} (hash: ${testHash})`);
       break;
     }
     
@@ -243,40 +260,16 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
       return res.status(404).json({ error: 'No unique high-engagement video found to post' });
     }
     
-    // STEP 4: Download video and upload to S3
-    console.log('⬇️ [POST NOW] Downloading video...');
-    const videoBuffer = await downloadVideoFromInstagram(selectedVideo.url);
-    
+    // STEP 4: Upload the already-downloaded buffer to S3
+    console.log('☁️ [POST NOW] Uploading pre-verified video to S3...');
     const s3Key = generateS3Key('manual', selectedVideo.id);
-    console.log('☁️ [POST NOW] Uploading to S3...');
-    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, 'video/mp4');
+    const s3Url = await uploadBufferToS3(selectedVideoBuffer, s3Key, 'video/mp4');
     
     if (!s3Url) {
       return res.status(500).json({ error: 'Failed to upload video to S3' });
     }
     
     console.log(`✅ [POST NOW] Video uploaded: ${s3Url}`);
-    
-    // STEP 4.5: Generate final thumbnail hash from S3 video buffer for ultimate duplicate checking
-    console.log('🔐 [POST NOW] Generating final thumbnail hash from S3 video...');
-    const crypto = require('crypto');
-    const s3Response = await require('node-fetch')(s3Url);
-    const s3Buffer = await s3Response.buffer();
-    const finalThumbnailHash = crypto.createHash('sha256').update(s3Buffer).digest('hex').substring(0, 16);
-    
-    // FINAL DUPLICATE CHECK: Verify this exact video hash wasn't posted in last 30
-    const finalDuplicateCheck = await SchedulerQueueModel.findOne({
-      platform: 'instagram',
-      status: 'posted',
-      thumbnailHash: finalThumbnailHash
-    }).sort({ postedAt: -1 }).limit(30);
-    
-    if (finalDuplicateCheck) {
-      console.log(`⚠️ [POST NOW] FINAL CHECK: Duplicate detected with exact hash match - ABORTING`);
-      return res.status(409).json({ error: 'Duplicate video detected in final hash check' });
-    }
-    
-    console.log(`✅ [POST NOW] Final hash verification passed: ${finalThumbnailHash}`);
     
     // STEP 5: Generate enhanced caption
     console.log('🧠 [POST NOW] Generating smart caption...');
