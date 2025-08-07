@@ -188,7 +188,7 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     const scrapedVideos = await scrapeInstagramEngagement(
       settings.igBusinessId,
       settings.instagramToken,
-      300 // Larger batch for better video selection
+      500 // Large batch for best video selection
     );
     
     if (scrapedVideos.length === 0) {
