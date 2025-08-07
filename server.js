@@ -264,14 +264,52 @@ try {
 
 // Unified dashboard analytics endpoint
 app.get('/api/analytics', async (req, res) => {
-        console.log(`✅ [AUTOPILOT] Reached maximum of ${maxPosts} videos`);
-        break; // Stop when we have enough videos
-      }
-      
-      const alreadyPosted = last30Posted.some(prev => prev.fingerprint === video.fingerprint);
-      const looksSimilar = last30Posted.some(prev => prev.thumbnailHash === video.thumbnailHash || prev.caption === video.caption);
-      
-      if (!alreadyPosted && !looksSimilar) {
+  try {
+    const settings = await SettingsModel.findOne();
+    if (!settings) {
+      return res.json({
+        instagram: { followers: 0, reach: 0, engagementRate: 0, autopilotEnabled: false },
+        youtube: { subscribers: 0, reach: 0, autopilotEnabled: false },
+        totalPosts: 0,
+        avgEngagement: 0
+      });
+    }
+
+    // Return analytics data
+    res.json({
+      instagram: { 
+        followers: 0, 
+        reach: 0, 
+        engagementRate: 0, 
+        autopilotEnabled: settings.autopilotEnabled || false 
+      },
+      youtube: { 
+        subscribers: 0, 
+        reach: 0, 
+        autopilotEnabled: settings.autopilotEnabled || false 
+      },
+      totalPosts: 0,
+      avgEngagement: 0
+    });
+  } catch (error) {
+    console.error('❌ [ANALYTICS] Error:', error);
+    res.status(500).json({ error: 'Failed to get analytics' });
+  }
+});
+
+// Activity feed endpoint
+app.get('/api/activity/feed', async (req, res) => {
+  try {
+    // Return empty activity feed for now
+    res.json({
+      activities: [],
+      totalCount: 0
+    });
+  } catch (error) {
+    console.error('❌ [ACTIVITY] Error:', error);
+    res.status(500).json({ error: 'Failed to get activity feed' });
+  }
+});
         console.log(`🎯 [AUTOPILOT] Selected video ${selectedVideos.length + 1}/${maxPosts} with ${video.engagement} engagement`);
         selectedVideos.push(video);
         
