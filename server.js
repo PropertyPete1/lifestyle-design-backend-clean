@@ -135,6 +135,36 @@ app.get('/api/debug/posted-videos', async (req, res) => {
   }
 });
 
+// Create mock posted videos for testing duplicate prevention
+app.post('/api/debug/create-mock-posted', async (req, res) => {
+  try {
+    const mockPostedVideos = [
+      {
+        platform: 'instagram',
+        status: 'posted',
+        originalVideoId: '18456098467004286',
+        thumbnailHash: 'mock1hash',
+        postedAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+        engagement: 1917726
+      },
+      {
+        platform: 'instagram', 
+        status: 'posted',
+        originalVideoId: '18052183477796236',
+        thumbnailHash: 'mock2hash',
+        postedAt: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
+        engagement: 448956
+      }
+    ];
+    
+    const result = await SchedulerQueueModel.insertMany(mockPostedVideos);
+    res.json({ success: true, created: result.length });
+  } catch (error) {
+    console.error('❌ [MOCK POSTED] Error:', error);
+    res.status(500).json({ error: 'Failed to create mock posted videos' });
+  }
+});
+
 // Get autopilot queue
 app.get('/api/autopilot/queue', async (req, res) => {
   try {
