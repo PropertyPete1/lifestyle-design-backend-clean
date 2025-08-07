@@ -96,22 +96,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const s3Key = generateS3Key('instagram');
     const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
     
-    // STEP 7.5: Extract thumbnail from video
-    console.log('📸 [AUTOPILOT] Step 7.5: Extracting thumbnail from video...');
-    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Fallback to Instagram thumbnail
-    try {
-      const tempVideoPath = `/tmp/video_${Date.now()}.mp4`;
-      require('fs').writeFileSync(tempVideoPath, videoBuffer);
-      const thumbnailPath = await extractFirstFrame(tempVideoPath);
-      const thumbnailBuffer = require('fs').readFileSync(thumbnailPath);
-      const thumbnailS3Key = s3Key.replace('.mp4', '_thumb.jpg');
-      extractedThumbnailUrl = await uploadBufferToS3(thumbnailBuffer, thumbnailS3Key, settings);
-      require('fs').unlinkSync(tempVideoPath);
-      require('fs').unlinkSync(thumbnailPath);
-      console.log('✅ [AUTOPILOT] Thumbnail extracted and uploaded:', extractedThumbnailUrl);
-    } catch (error) {
-      console.warn('⚠️ [AUTOPILOT] Thumbnail extraction failed, using Instagram thumbnail:', error.message);
-    }
+    // STEP 7.5: Use Instagram thumbnail (reliable and fast)
+    console.log('📸 [AUTOPILOT] Step 7.5: Using Instagram thumbnail...');
+    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Instagram's original thumbnail
+    console.log('✅ [AUTOPILOT] Thumbnail URL:', extractedThumbnailUrl);
     
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
@@ -375,22 +363,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const s3Key = generateS3Key('instagram');
     const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
     
-    // STEP 7.5: Extract thumbnail from video
-    console.log('📸 [AUTOPILOT] Step 7.5: Extracting thumbnail from video...');
-    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Fallback to Instagram thumbnail
-    try {
-      const tempVideoPath = `/tmp/video_${Date.now()}.mp4`;
-      require('fs').writeFileSync(tempVideoPath, videoBuffer);
-      const thumbnailPath = await extractFirstFrame(tempVideoPath);
-      const thumbnailBuffer = require('fs').readFileSync(thumbnailPath);
-      const thumbnailS3Key = s3Key.replace('.mp4', '_thumb.jpg');
-      extractedThumbnailUrl = await uploadBufferToS3(thumbnailBuffer, thumbnailS3Key, settings);
-      require('fs').unlinkSync(tempVideoPath);
-      require('fs').unlinkSync(thumbnailPath);
-      console.log('✅ [AUTOPILOT] Thumbnail extracted and uploaded:', extractedThumbnailUrl);
-    } catch (error) {
-      console.warn('⚠️ [AUTOPILOT] Thumbnail extraction failed, using Instagram thumbnail:', error.message);
-    }
+    // STEP 7.5: Use Instagram thumbnail (reliable and fast)
+    console.log('📸 [AUTOPILOT] Step 7.5: Using Instagram thumbnail...');
+    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Instagram's original thumbnail
+    console.log('✅ [AUTOPILOT] Thumbnail URL:', extractedThumbnailUrl);
     
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
