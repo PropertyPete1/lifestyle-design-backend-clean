@@ -165,193 +165,27 @@ app.post('/api/debug/create-mock-posted', async (req, res) => {
   }
 });
 
-// POST NOW - Instant posting system (manual override)
+// OLD POST NOW ENDPOINT REMOVED - Use /api/postNow instead
+// This endpoint redirects to the new service-based implementation
 app.post('/api/autopilot/manual-post', async (req, res) => {
+  console.log('⚠️ [DEPRECATED] /api/autopilot/manual-post called - redirecting to /api/postNow');
+  
   try {
-    console.log('🚀 [POST NOW] Starting instant post process...');
-    
-    // Get settings for API credentials
-    const settings = await SettingsModel.findOne();
+    const settings = await SettingsModel.findOne({});
     if (!settings || !settings.instagramToken || !settings.igBusinessId) {
       return res.status(400).json({ error: 'Missing Instagram credentials in settings' });
     }
+
+    const { executePostNow } = require('./services/postNow');
+    const result = await executePostNow(settings);
+    return res.status(200).json(result);
     
-    // Import required functions
-    const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('./utils/instagramScraper');
-    const { uploadBufferToS3, generateS3Key } = require('./utils/s3Uploader');
-    const { generateSmartCaptionWithKey } = require('./services/captionAI');
-    const { generateThumbnailHash } = require('./utils/postHistory');
-    const { postToInstagram, postToYouTube } = require('./services/postExecutor');
-    
-    // STEP 1: Scrape Instagram for high-engagement videos
-    console.log('📱 [POST NOW] Scraping Instagram for high-engagement videos...');
-    const scrapedVideos = await scrapeInstagramEngagement(
-      settings.igBusinessId,
-      settings.instagramToken,
-      500 // Large batch for best video selection
-    );
-    
-    if (scrapedVideos.length === 0) {
-      return res.status(404).json({ error: 'No videos found to post' });
-    }
-    
-    console.log(`✅ [POST NOW] Found ${scrapedVideos.length} videos to analyze`);
-    
-    // STEP 2: Get last 30 Instagram posts with comprehensive data for duplicate prevention
-    // Check activitylogs collection where posted videos are actually stored
-    const ActivityLogModel = mongoose.model('ActivityLog', new mongoose.Schema({}, { strict: false }), 'activitylogs');
-    const last30IG = await ActivityLogModel.find({
-      platform: 'instagram',
-      status: 'success'
-    })
-    .sort({ createdAt: -1 })
-    .limit(30)
-    .select('videoId thumbnailUrl caption');
-    
-    // 👁️‍🗨️ Collect recent hashes, captions, and video IDs for multi-layer checking
-    // Note: activitylogs uses videoId, thumbnailUrl, caption fields
-    const recentHashes = new Set(); // thumbnailHash not available in activitylogs
-    const recentCaptions = new Set(last30IG.map(v => v.caption?.trim().toLowerCase().substring(0, 50)).filter(cap => cap));
-    const recentVideoIds = new Set(last30IG.map(v => v.videoId).filter(id => id));
-    
-    console.log(`🛡️ [POST NOW] Multi-layer duplicate prevention:`);
-    console.log(`📊 [DEBUG] Found ${last30IG.length} posted entries in database`);
-    console.log(`⏰ [DEBUG] Checking LAST ${last30IG.length} MOST RECENT successful Instagram posts`);
-    if (last30IG.length > 0) {
-      const mostRecent = last30IG[0];
-      const oldest = last30IG[last30IG.length - 1];
-      console.log(`📅 [DEBUG] Most recent post: ${mostRecent.createdAt || mostRecent.videoId}`);
-      console.log(`📅 [DEBUG] Oldest in range: ${oldest.createdAt || oldest.videoId}`);
-    }
-    console.log(`📸 ${recentHashes.size} recent thumbnail hashes`);
-    console.log(`📝 ${recentCaptions.size} recent caption snippets`);
-    console.log(`🆔 ${recentVideoIds.size} recent video IDs`);
-    
-    // DEBUG: If no posted entries exist, log this critical issue
-    if (last30IG.length === 0) {
-      console.log(`⚠️ [POST NOW] WARNING: Database has NO posted entries! This means:`);
-      console.log(`   1. Post Now never saved posted entries before`);
-      console.log(`   2. OR cron scheduler isn't marking posts as 'posted'`);
-      console.log(`   3. OR database was cleared`);
-      console.log(`   4. This will cause same video selection repeatedly!`);
-      console.log(`🔄 [POST NOW] APPLYING TEMPORARY FIX: Adding time-based randomization to prevent same video selection`);
-    }
-    
-    // STEP 3: Find unique high-engagement video with PRE-DOWNLOAD hash verification
-    let selectedVideo = null;
-    let selectedVideoBuffer = null;
-    let finalThumbnailHash = null;
-    
-    console.log('🔍 [POST NOW] Starting pre-download duplicate filtering...');
-    const crypto = require('crypto');
-    
-    // If no posted entries exist, randomize the start point to avoid always selecting the same video
-    let startIndex = 0;
-    if (last30IG.length === 0) {
-      startIndex = Math.floor(Math.random() * Math.min(scrapedVideos.length, 20)); // Random start within first 20 videos
-      console.log(`🎲 [POST NOW] Starting from random index ${startIndex} to avoid repeat selection`);
-    }
-    
-    for (let i = startIndex; i < scrapedVideos.length; i++) {
-      const video = scrapedVideos[i];
-      if (video.engagement < 10000) continue; // Skip low engagement
-      
-      console.log(`🔍 [POST NOW] Testing video ${video.id} (${video.engagement} engagement)...`);
-      
-      // PRE-DOWNLOAD: Download video buffer to generate hash BEFORE committing to post
-      console.log('⬇️ [POST NOW] Pre-downloading for hash verification...');
-      const testBuffer = await downloadVideoFromInstagram(video.url);
-      const testHash = crypto.createHash('sha256').update(testBuffer).digest('hex').substring(0, 16);
-      
-      // Check if this exact video exists in the LAST 30 MOST RECENT posts
-      const videoIdMatch = recentVideoIds.has(video.id);
-      const captionMatch = recentCaptions.has(video.caption?.trim().toLowerCase().substring(0, 50));
-      const videoExists = videoIdMatch || captionMatch;
-      
-      if (videoExists) {
-        const matchType = videoIdMatch ? 'Video ID' : 'Caption';
-        console.log(`⏭️ [POST NOW] Skipping video: ${video.id} - ${matchType} found in LAST 30 MOST RECENT posts`);
-        continue;
-      }
-      
-      // This video is unique - select it
-      selectedVideo = video;
-      selectedVideoBuffer = testBuffer;
-      finalThumbnailHash = testHash;
-      console.log(`✅ [POST NOW] Selected unique video: ${video.id} - NOT found in last 30 most recent posts`);
-      console.log(`🎯 [POST NOW] Video hash: ${testHash} | Engagement: ${video.engagement}`);
-      break;
-    }
-    
-    if (!selectedVideo) {
-      return res.status(404).json({ error: 'No unique high-engagement video found to post' });
-    }
-    
-    // STEP 4: Upload the already-downloaded buffer to S3
-    console.log('☁️ [POST NOW] Uploading pre-verified video to S3...');
-    const s3Key = generateS3Key('manual', selectedVideo.id);
-    const s3Url = await uploadBufferToS3(selectedVideoBuffer, s3Key, 'video/mp4');
-    
-    if (!s3Url) {
-      return res.status(500).json({ error: 'Failed to upload video to S3' });
-    }
-    
-    console.log(`✅ [POST NOW] Video uploaded: ${s3Url}`);
-    
-    // STEP 5: Generate enhanced caption
-    console.log('🧠 [POST NOW] Generating smart caption...');
-    const enhancedCaption = await generateSmartCaptionWithKey(
-      selectedVideo.caption || 'Amazing video!', 
-      settings.openaiApiKey
-    );
-    
-    // STEP 6: Post to Instagram and YouTube instantly
-    const postData = {
-      videoUrl: s3Url,
-      caption: enhancedCaption,
-      thumbnailUrl: s3Url,
-      source: 'manual'
-    };
-    
-    console.log('📱 [POST NOW] Posting to Instagram...');
-    const instagramResult = await postToInstagram(postData, settings);
-    
-    console.log('🎥 [POST NOW] Posting to YouTube...');
-    const youtubeResult = await postToYouTube(postData, settings);
-    
-    // STEP 7: Log as posted in database with final thumbnail hash
-    console.log(`💾 [POST NOW] Saving to database with hash: ${finalThumbnailHash}`);
-    const postedEntry = await SchedulerQueueModel.create({
-      platform: 'instagram',
-      source: 'manual',
-      originalVideoId: selectedVideo.id,
-      videoUrl: s3Url,
-      caption: enhancedCaption,
-      thumbnailHash: finalThumbnailHash, // Use the final hash from S3 buffer
-      engagement: selectedVideo.engagement,
-      status: 'posted',
-      postedAt: new Date(),
-      scheduledTime: new Date() // Posted immediately
-    });
-    console.log(`✅ [POST NOW] Database entry created with ID: ${postedEntry._id}`);
-    
-    console.log('✅ [POST NOW] Successfully posted to Instagram and YouTube!');
-    
-    res.json({
-      success: true,
-      message: 'Video posted instantly to Instagram and YouTube!',
-      videoId: selectedVideo.id,
-      engagement: selectedVideo.engagement,
-      s3Url: s3Url,
-      instagram: instagramResult.success,
-      youtube: youtubeResult.success
-    });
-    
-  } catch (error) {
-    console.error('❌ [POST NOW] Error:', error);
+  } catch (err) {
+    console.error("❌ [POST NOW ERROR]", err);
     res.status(500).json({ 
-      error: 'Failed to post video instantly',
-      details: error.message 
+      error: "Internal server error", 
+      details: err.message,
+      success: false 
     });
   }
 });
