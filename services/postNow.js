@@ -181,6 +181,9 @@ async function executePostNow(settings) {
     let selectedHash = null;
     let selectedBuffer = null;
 
+    // Quality threshold (bytes). Tunable via env, default 3 MB
+    const MIN_BYTES_QUALITY = Number(process.env.MIN_VIDEO_BYTES_QUALITY || 3 * 1024 * 1024);
+
     for (const video of candidates) {
       console.log(`🔍 Checking video ${video.id} (engagement: ${video.engagement})...`);
       // Optional quick quality gate: HEAD check content-length >= 8MB (skip very small/low-res)
@@ -188,8 +191,8 @@ async function executePostNow(settings) {
         const fetch = require('node-fetch');
         const headResp = await fetch(video.url, { method: 'HEAD' });
         const size = parseInt(headResp.headers.get('content-length') || '0', 10);
-        if (Number.isFinite(size) && size > 0 && size < 8 * 1024 * 1024) {
-          console.log(`⛔ Skipping video ${video.id} - too small (${size} bytes)`);
+        if (Number.isFinite(size) && size > 0 && size < MIN_BYTES_QUALITY) {
+          console.log(`⛔ Skipping video ${video.id} - too small (${size} bytes < ${MIN_BYTES_QUALITY})`);
           continue;
         }
       } catch (_) {}
