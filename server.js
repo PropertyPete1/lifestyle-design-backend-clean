@@ -846,6 +846,30 @@ app.post('/api/test/upload', async (req, res) => {
 });
 
 // 404 handler
+// Debug endpoint to check posted videos
+app.get('/api/debug/posted-status', async (req, res) => {
+  try {
+    const totalPosts = await SchedulerQueueModel.countDocuments({});
+    const postedPosts = await SchedulerQueueModel.countDocuments({ status: 'posted' });
+    const scheduledPosts = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    const recentPosted = await SchedulerQueueModel.find({ status: 'posted' })
+      .sort({ postedAt: -1 })
+      .limit(5)
+      .select('platform status postedAt thumbnailHash originalVideoId')
+      .exec();
+    
+    res.json({
+      totalPosts,
+      postedPosts,
+      scheduledPosts,
+      recentPosted,
+      timestamp: new Date()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
