@@ -49,8 +49,11 @@ const schedulerQueueSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed', 'scheduled'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'scheduled', 'posted'],
     default: 'scheduled'
+  },
+  postedAt: {
+    type: Date
   },
   source: {
     type: String,
