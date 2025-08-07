@@ -306,11 +306,19 @@ async function generateSmartCaptionWithKey(originalCaption, openaiApiKey) {
       return modifyOriginalCaption(originalCaption);
     }
 
-    const prompt = `Rewrite this Instagram caption to be engaging and fresh while keeping the same meaning. Make it sound natural and authentic. Remove any dashes or bullet points. Keep it under 150 characters:
+    const prompt = `Rewrite the following Instagram caption with light wording improvements only. STRICT RULES:
+    - Preserve the full content, structure, emojis, line breaks, and length as much as possible.
+    - DO NOT remove or shorten content.
+    - Keep ALL existing hashtags exactly as-is and in place.
+    - Remove dashes/bullets if present and normalize spacing.
+    - If the caption does NOT already include a call-to-action about the profile link, append a new line at the end: "Fill out the link in bio for info." (do not add if already present in any form).
 
-Original: "${originalCaption}"
+Original caption:
+"""
+${originalCaption}
+"""
 
-Rewritten:`;
+Return ONLY the rewritten caption text.`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -319,15 +327,15 @@ Rewritten:`;
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_tokens: 100,
-        temperature: 0.7
+        max_tokens: 1200,
+        temperature: 0.5
       })
     });
 
@@ -379,9 +387,11 @@ module.exports = {
  * - Caps hashtags to a safe limit and enforces IG 2,200-char description limit
  */
 function buildInstagramCaption(originalCaption = '', trendingEnv = '') {
+  // Keep full content and line breaks; only remove dashes/bullets and normalize excessive spacing
   const cleanedText = (originalCaption || '')
     .replace(/[\-–—•]/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   const extractHashtags = (text = '') => (text.match(/#[A-Za-z0-9_]+/g) || [])
@@ -395,25 +405,10 @@ function buildInstagramCaption(originalCaption = '', trendingEnv = '') {
   const defaultTrending = ['realestate','reels','viral','architecture','luxuryhomes','interiordesign','realtor','dreamhome','property','househunting'];
   const trending = trendingList.length ? trendingList : defaultTrending;
 
-  // Replace up to 2 of the user tags with trending not already included
+  // Do NOT remove or replace existing hashtags; optionally append up to 5 trending not already present
   const finalTags = [...userTags];
-  let replaced = 0;
   for (const t of trending) {
-    if (replaced >= 2) break;
-    if (!finalTags.includes(t)) {
-      // If we have some user tag to swap, replace last one; else append
-      if (finalTags.length) {
-        finalTags[finalTags.length - 1 - replaced] = t;
-      } else {
-        finalTags.push(t);
-      }
-      replaced += 1;
-    }
-  }
-
-  // Add more trending until we reach ~20 tags max
-  for (const t of trending) {
-    if (finalTags.length >= 20) break;
+    if (finalTags.length >= Math.max(userTags.length + 5, 20)) break;
     if (!finalTags.includes(t)) finalTags.push(t);
   }
 
@@ -424,13 +419,12 @@ function buildInstagramCaption(originalCaption = '', trendingEnv = '') {
   // Enforce IG 2,200-char limit: prefer keeping text; trim hashtags if needed
   const MAX_IG = 2200;
   if (composed.length > MAX_IG) {
-    // Try reducing hashtags first
-    let tags = finalTags.slice();
-    let text = cleanedText;
-    while (tags.length && (text.length + 2 + tags.join(' ').length) > MAX_IG) {
+    // If over limit, trim only extra appended hashtags; preserve caption text
+    let tags = finalTags.slice(0, Math.max(0, finalTags.length - 1));
+    while ((cleanedText.length + (tags.length ? 2 + tags.join(' ').length : 0)) > MAX_IG && tags.length) {
       tags.pop();
     }
-    composed = tags.length ? `${text}\n\n${tags.map(t => `#${t}`).join(' ')}` : text.slice(0, MAX_IG);
+    composed = tags.length ? `${cleanedText}\n\n${tags.map(t => `#${t}`).join(' ')}` : cleanedText.slice(0, MAX_IG);
   }
 
   return composed;
