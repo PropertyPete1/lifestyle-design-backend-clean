@@ -4,7 +4,7 @@
  */
 
 const { uploadBufferToS3, generateS3Key } = require('../utils/s3Uploader');
-const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartScheduler');
+const { getSmartSchedulerTime } = require('../utils/smartScheduler');
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
 const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
 const { extractFirstFrame } = require('../utils/thumbnailExtractor');
@@ -178,8 +178,8 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
         const enhancedCaption = await generateSmartCaptionWithKey(video.caption, settings.openaiApiKey);
         
         // Calculate scheduled times
-        const instagramTime = await getSmartSchedulerTime('instagram', i, SchedulerQueueModel);
-        const youtubeTime = await getSmartSchedulerTime('youtube', i, SchedulerQueueModel);
+        const instagramTime = await getSmartSchedulerTime('instagram', settings);
+        const youtubeTime = await getSmartSchedulerTime('youtube', settings);
         
         // Queue for Instagram
         const instagramPost = {
