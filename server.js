@@ -290,14 +290,35 @@ app.post('/api/autopilot/run', async (req, res) => {
         
         let s3Url;
         try {
+          // 🧪 STEP 8A: Download video from Instagram
+          console.log('📥 [DEBUG] Downloading video from Instagram URL:', video.url);
           const videoBuffer = await downloadVideoFromInstagram(video.url);
+          console.log('✅ [DEBUG] Video downloaded, buffer size:', videoBuffer ? videoBuffer.length : 'null');
           
-          // STEP 8: Upload to S3 for hosting
-          console.log('☁️ [AUTOPILOT] Uploading to S3...');
+          if (!videoBuffer) {
+            throw new Error('Video download returned null/empty buffer');
+          }
+          
+          // 🧪 STEP 8B: Upload to S3 for hosting
+          console.log('☁️ [DEBUG] Starting S3 upload with key:', s3Key);
+          console.log('🔑 [DEBUG] S3 credentials check:', {
+            hasAccessKey: !!settings.s3AccessKey,
+            hasBucket: !!settings.s3BucketName,
+            region: settings.s3Region
+          });
+          
           s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
+          
+          console.log('🔗 [DEBUG] S3 upload result:', s3Url);
+          
+          if (!s3Url) {
+            throw new Error('S3 upload returned null URL');
+          }
+          
           console.log('✅ [AUTOPILOT] S3 upload successful:', s3Url);
         } catch (downloadError) {
           console.error('❌ [AUTOPILOT] Video download/upload failed:', downloadError.message);
+          console.error('🔍 [DEBUG] Full error details:', downloadError);
           // Use original Instagram URL as fallback for posting
           s3Url = video.url;
           console.log('🔄 [AUTOPILOT] Using original Instagram URL as fallback');
