@@ -14,6 +14,7 @@ const fetch = require('node-fetch');
  */
 async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
   try {
+    console.log(`🕷️ [IG SCRAPER] FUNCTION CALLED WITH LIMIT: ${limit} videos`);
     console.log(`🕷️ [IG SCRAPER] Scraping ${limit} videos for engagement data`);
     
     const videos = [];
