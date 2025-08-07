@@ -302,7 +302,7 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
       videoUrl: s3Url,
       caption: enhancedCaption,
       thumbnailUrl: s3Url,
-      source: 'postNow'
+      source: 'manual'
     };
     
     console.log('📱 [POST NOW] Posting to Instagram...');
@@ -315,7 +315,7 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     console.log(`💾 [POST NOW] Saving to database with hash: ${finalThumbnailHash}`);
     const postedEntry = await SchedulerQueueModel.create({
       platform: 'instagram',
-      source: 'postNow',
+      source: 'manual',
       originalVideoId: selectedVideo.id,
       videoUrl: s3Url,
       caption: enhancedCaption,
