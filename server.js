@@ -10,8 +10,8 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// MongoDB connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://peterallen:RDSTonopah1992@cluster0.7vqin.mongodb.net/lifestyle-design-social?retryWrites=true&w=majority';
+// MongoDB connection  
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb+srv://peterallen:RDSTonopah1992@cluster0.7vqin.mongodb.net/lifestyle-design-social?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
@@ -181,7 +181,12 @@ app.post('/api/autopilot/run', async (req, res) => {
 // Settings endpoints
 app.get('/api/settings', async (req, res) => {
   try {
+    console.log('📋 [SETTINGS] Fetching settings from MongoDB...');
     const settings = await SettingsModel.findOne();
+    console.log('📋 [SETTINGS] Found settings:', settings ? 'YES' : 'NO');
+    if (settings) {
+      console.log('📋 [SETTINGS] Settings keys:', Object.keys(settings.toObject || settings));
+    }
     res.json(settings || {});
   } catch (error) {
     console.error('❌ [SETTINGS] Error:', error);
@@ -191,13 +196,15 @@ app.get('/api/settings', async (req, res) => {
 
 app.post('/api/settings', async (req, res) => {
   try {
+    console.log('💾 [SETTINGS] Updating settings with:', Object.keys(req.body));
     const settings = await SettingsModel.findOneAndUpdate({}, req.body, { 
       new: true, 
       upsert: true 
     });
+    console.log('💾 [SETTINGS] Update result:', settings ? 'SUCCESS' : 'FAILED');
     res.json(settings);
   } catch (error) {
-    console.error('❌ [SETTINGS] Error:', error);
+    console.error('❌ [SETTINGS] Update error:', error);
     res.status(500).json({ error: 'Failed to update settings' });
   }
 });
