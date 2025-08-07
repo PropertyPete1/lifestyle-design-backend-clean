@@ -8,6 +8,7 @@ const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartS
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
 const { getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
 const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
+const { extractFirstFrame } = require('../utils/thumbnailExtractor');
 
 /**
  * Run Instagram AutoPilot - Main autopilot function
@@ -95,6 +96,23 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const s3Key = generateS3Key('instagram');
     const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
     
+    // STEP 7.5: Extract thumbnail from video
+    console.log('📸 [AUTOPILOT] Step 7.5: Extracting thumbnail from video...');
+    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Fallback to Instagram thumbnail
+    try {
+      const tempVideoPath = `/tmp/video_${Date.now()}.mp4`;
+      require('fs').writeFileSync(tempVideoPath, videoBuffer);
+      const thumbnailPath = await extractFirstFrame(tempVideoPath);
+      const thumbnailBuffer = require('fs').readFileSync(thumbnailPath);
+      const thumbnailS3Key = s3Key.replace('.mp4', '_thumb.jpg');
+      extractedThumbnailUrl = await uploadBufferToS3(thumbnailBuffer, thumbnailS3Key, settings);
+      require('fs').unlinkSync(tempVideoPath);
+      require('fs').unlinkSync(thumbnailPath);
+      console.log('✅ [AUTOPILOT] Thumbnail extracted and uploaded:', extractedThumbnailUrl);
+    } catch (error) {
+      console.warn('⚠️ [AUTOPILOT] Thumbnail extraction failed, using Instagram thumbnail:', error.message);
+    }
+    
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
     const smartCaption = await generateSmartCaptionWithKey(selectedVideo.caption, settings.openaiApiKey);
@@ -124,7 +142,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
         caption: smartCaption,
         audio: trendingAudio,
         scheduledTime: scheduledTime,
-        thumbnailUrl: selectedVideo.thumbnailUrl,
+        thumbnailUrl: extractedThumbnailUrl,
         fingerprint: selectedVideo.fingerprint,
         thumbnailHash: selectedVideo.thumbnailHash,
         originalVideoId: selectedVideo.id,
@@ -144,7 +162,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
         videoUrl: s3Url,
         caption: smartCaption,
         scheduledTime: youtubeTime,
-        thumbnailUrl: selectedVideo.thumbnailUrl,
+        thumbnailUrl: extractedThumbnailUrl,
         fingerprint: selectedVideo.fingerprint,
         thumbnailHash: selectedVideo.thumbnailHash,
         originalVideoId: selectedVideo.id,
@@ -269,6 +287,7 @@ const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartS
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
 const { getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
 const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
+const { extractFirstFrame } = require('../utils/thumbnailExtractor');
 
 /**
  * Run Instagram AutoPilot - Main autopilot function
@@ -356,6 +375,23 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     const s3Key = generateS3Key('instagram');
     const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
     
+    // STEP 7.5: Extract thumbnail from video
+    console.log('📸 [AUTOPILOT] Step 7.5: Extracting thumbnail from video...');
+    let extractedThumbnailUrl = selectedVideo.thumbnailUrl; // Fallback to Instagram thumbnail
+    try {
+      const tempVideoPath = `/tmp/video_${Date.now()}.mp4`;
+      require('fs').writeFileSync(tempVideoPath, videoBuffer);
+      const thumbnailPath = await extractFirstFrame(tempVideoPath);
+      const thumbnailBuffer = require('fs').readFileSync(thumbnailPath);
+      const thumbnailS3Key = s3Key.replace('.mp4', '_thumb.jpg');
+      extractedThumbnailUrl = await uploadBufferToS3(thumbnailBuffer, thumbnailS3Key, settings);
+      require('fs').unlinkSync(tempVideoPath);
+      require('fs').unlinkSync(thumbnailPath);
+      console.log('✅ [AUTOPILOT] Thumbnail extracted and uploaded:', extractedThumbnailUrl);
+    } catch (error) {
+      console.warn('⚠️ [AUTOPILOT] Thumbnail extraction failed, using Instagram thumbnail:', error.message);
+    }
+    
     // STEP 8: Generate smart caption
     console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
     const smartCaption = await generateSmartCaptionWithKey(selectedVideo.caption, settings.openaiApiKey);
@@ -385,7 +421,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
         caption: smartCaption,
         audio: trendingAudio,
         scheduledTime: scheduledTime,
-        thumbnailUrl: selectedVideo.thumbnailUrl,
+        thumbnailUrl: extractedThumbnailUrl,
         fingerprint: selectedVideo.fingerprint,
         thumbnailHash: selectedVideo.thumbnailHash,
         originalVideoId: selectedVideo.id,
@@ -405,7 +441,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
         videoUrl: s3Url,
         caption: smartCaption,
         scheduledTime: youtubeTime,
-        thumbnailUrl: selectedVideo.thumbnailUrl,
+        thumbnailUrl: extractedThumbnailUrl,
         fingerprint: selectedVideo.fingerprint,
         thumbnailHash: selectedVideo.thumbnailHash,
         originalVideoId: selectedVideo.id,
