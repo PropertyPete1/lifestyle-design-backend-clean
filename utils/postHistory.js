@@ -41,9 +41,8 @@ async function getLast30InstagramPosts(settings) {
       if (post.media_type === 'VIDEO' && post.thumbnail_url) {
         try {
           const thumbnailHash = await generateThumbnailHash(post.thumbnail_url);
-          const crypto = require('crypto');
-          const caption = post.caption || '';
-          const fingerprint = crypto.createHash('md5').update(`${caption.toLowerCase().trim()}|${post.thumbnail_url}`).digest('hex');
+          // Use ONLY visual thumbnail hash as fingerprint for pure visual duplicate detection
+          const fingerprint = thumbnailHash;
           
           postsWithHashes.push({
             id: post.id,

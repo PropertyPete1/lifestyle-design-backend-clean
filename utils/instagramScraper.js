@@ -45,8 +45,8 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
             engagement: engagement,
             timestamp: media.timestamp,
             permalink: media.permalink,
-            fingerprint: generateFingerprint(media.caption, media.thumbnail_url),
-            thumbnailHash: await generateThumbnailHash(media.thumbnail_url)
+            thumbnailHash: await generateThumbnailHash(media.thumbnail_url),
+            fingerprint: await generateThumbnailHash(media.thumbnail_url) // Use visual hash as fingerprint
           });
         }
       }
