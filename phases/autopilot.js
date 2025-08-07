@@ -79,7 +79,7 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     
     try {
       // Fetch last 30 posts from your Instagram account using Graph API
-      const instagramUrl = `https://graph.instagram.com/v21.0/${settings.igBusinessId}/media?fields=id,thumbnail_url,timestamp&limit=30&access_token=${settings.instagramToken}`;
+      const instagramUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,thumbnail_url,timestamp&limit=30&access_token=${settings.instagramToken}`;
       const fetch = require('node-fetch');
       const response = await fetch(instagramUrl);
       
