@@ -383,7 +383,7 @@ app.post('/api/autopilot/run', async (req, res) => {
             scheduledTime: scheduledTime,
             status: 'scheduled',
             source: 'autopilot',
-            s3Url: s3Url,
+            videoUrl: s3Url,       // ✅ Use correct field name for postExecutor
             engagement: video.engagement,
             trendingAudio: trendingAudio
           });
