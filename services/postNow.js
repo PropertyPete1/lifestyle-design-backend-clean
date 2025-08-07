@@ -155,15 +155,44 @@ async function executePostNow(settings) {
     // This ensures we're filtering against real post history, not just database logs
     const last30InstagramPosts = await fetchLast30InstagramPosts(settings); // [{ id, thumbnailUrl, caption, audioId }]
 
-    // Generate visual/audio/caption fingerprints for comparison
-    console.log('🔍 [STEP 1] Generating fingerprints for comparison...');
-    const recentHashes = await Promise.all(
-      last30InstagramPosts.map(async (post) => {
-        const buffer = await downloadVideoBuffer(post.url);
+    // Generate visual/audio/caption fingerprints for comparison (SEQUENTIAL to avoid memory overload)
+    console.log('🔍 [STEP 1] Generating fingerprints sequentially to prevent memory leaks...');
+    const recentHashes = [];
+    
+    // Process posts one by one to avoid concurrent memory spikes
+    for (let i = 0; i < last30InstagramPosts.length; i++) {
+      const post = last30InstagramPosts[i];
+      let buffer = null;
+      
+      try {
+        buffer = await downloadVideoBuffer(post.url);
         const frame = await extractFirstFrame(buffer);
-        return await generateVisualHash(frame);
-      })
-    );
+        const hash = await generateVisualHash(frame);
+        recentHashes.push(hash);
+        
+        // Explicit memory cleanup
+        if (buffer && Buffer.isBuffer(buffer)) {
+          buffer.fill(0);
+          buffer = null;
+        }
+        
+        // Memory monitoring every 10 posts
+        if (i % 10 === 0) {
+          const memUsage = process.memoryUsage();
+          console.log(`🧠 [MEMORY] Post ${i}/${last30InstagramPosts.length}: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB used`);
+          if (global.gc) global.gc(); // Hint garbage collector
+        }
+        
+      } catch (error) {
+        console.error(`❌ Error processing recent post ${i}: ${error.message}`);
+        // Clean up on error
+        if (buffer && Buffer.isBuffer(buffer)) {
+          buffer.fill(0);
+          buffer = null;
+        }
+      }
+    }
+    
     const recentCaptions = last30InstagramPosts.map(p => p.caption);
     const recentAudioIds = last30InstagramPosts.map(p => p.audioId).filter(Boolean);
 
@@ -188,27 +217,59 @@ async function executePostNow(settings) {
     let selectedVideo = null;
     let selectedHash = null;
     let selectedBuffer = null;
+    let processedCount = 0;
 
     for (const video of sortedVideos) {
-      const buffer = await downloadVideoBuffer(video.url);
-      const frame = await extractFirstFrame(buffer);
-      const hash = await generateVisualHash(frame);
+      let buffer = null;
+      
+      try {
+        buffer = await downloadVideoBuffer(video.url);
+        const frame = await extractFirstFrame(buffer);
+        const hash = await generateVisualHash(frame);
 
-      const isDuplicateHash = recentHashes.includes(hash);
-      const isDuplicateCaption = recentCaptions.some(c => compareCaptionSimilarity(video.caption, c) > 0.9);
-      const isDuplicateAudio = recentAudioIds.includes(video.audioId);
+        const isDuplicateHash = recentHashes.includes(hash);
+        const isDuplicateCaption = recentCaptions.some(c => compareCaptionSimilarity(video.caption, c) > 0.9);
+        const isDuplicateAudio = recentAudioIds.includes(video.audioId);
 
-      if (isDuplicateHash || isDuplicateCaption || isDuplicateAudio) {
-        console.log(`⛔ Skipping duplicate video ${video.id} [Hash:${isDuplicateHash} | Caption:${isDuplicateCaption} | Audio:${isDuplicateAudio}]`);
+        if (isDuplicateHash || isDuplicateCaption || isDuplicateAudio) {
+          console.log(`⛔ Skipping duplicate video ${video.id} [Hash:${isDuplicateHash} | Caption:${isDuplicateCaption} | Audio:${isDuplicateAudio}]`);
+          
+          // CRITICAL: Clean up rejected video buffer immediately
+          if (buffer && Buffer.isBuffer(buffer)) {
+            buffer.fill(0);
+            buffer = null;
+          }
+          
+          processedCount++;
+          // Memory monitoring every 20 rejections
+          if (processedCount % 20 === 0) {
+            const memUsage = process.memoryUsage();
+            console.log(`🧠 [MEMORY] Processed ${processedCount} videos: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB used`);
+            if (global.gc) global.gc(); // Hint garbage collector
+          }
+          
+          continue;
+        }
+
+        // ✅ This video passed all checks
+        selectedVideo = video;
+        selectedHash = hash;
+        selectedBuffer = buffer; // Keep this buffer for upload
+        console.log(`✅ [STEP 3] Selected unique video: ${video.id} with ${video.engagement} engagement`);
+        break;
+        
+      } catch (error) {
+        console.error(`❌ Error processing candidate video ${video.id}: ${error.message}`);
+        
+        // Clean up on error
+        if (buffer && Buffer.isBuffer(buffer)) {
+          buffer.fill(0);
+          buffer = null;
+        }
+        
+        processedCount++;
         continue;
       }
-
-      // ✅ This video passed all checks
-      selectedVideo = video;
-      selectedHash = hash;
-      selectedBuffer = buffer;
-      console.log(`✅ [STEP 3] Selected unique video: ${video.id} with ${video.engagement} engagement`);
-      break;
     }
 
     // 🧱 Safety check: If all videos were duplicates, abort
@@ -234,6 +295,13 @@ async function executePostNow(settings) {
     const s3Key = `autopilot/manual/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp4`;
     const s3Url = await uploadBufferToS3(selectedBuffer, s3Key, "video/mp4");
     console.log(`✅ [STEP 4] Uploaded to S3: ${s3Url}`);
+    
+    // Clean up the selected buffer after S3 upload
+    if (selectedBuffer && Buffer.isBuffer(selectedBuffer)) {
+      selectedBuffer.fill(0);
+      selectedBuffer = null;
+      console.log('🧹 [CLEANUP] Released video buffer after S3 upload');
+    }
 
     //////////////////////////////////
     // ✅ STEP 5: GENERATE SMART CAPTION
@@ -271,6 +339,14 @@ async function executePostNow(settings) {
     });
 
     console.log("✅ [POST NOW] Successfully posted unique video to Instagram.");
+    
+    // Final memory cleanup and garbage collection
+    const finalMemUsage = process.memoryUsage();
+    console.log(`🧠 [FINAL MEMORY] Process complete: ${Math.round(finalMemUsage.heapUsed / 1024 / 1024)}MB used`);
+    if (global.gc) {
+      global.gc();
+      console.log('🧹 [CLEANUP] Final garbage collection triggered');
+    }
 
     return {
       success: true,
@@ -285,11 +361,30 @@ async function executePostNow(settings) {
         visualHash: true,
         captionSimilarity: true,
         audioId: !!selectedVideo.audioId
-      }
+      },
+      memoryUsage: `${Math.round(finalMemUsage.heapUsed / 1024 / 1024)}MB`
     };
 
   } catch (error) {
     console.error('❌ [POST NOW ERROR]', error);
+    
+    // Clean up any remaining buffers in case of error
+    if (typeof selectedBuffer !== 'undefined' && selectedBuffer && Buffer.isBuffer(selectedBuffer)) {
+      try {
+        selectedBuffer.fill(0);
+        selectedBuffer = null;
+        console.log('🧹 [ERROR CLEANUP] Released selectedBuffer');
+      } catch (cleanupError) {
+        console.error('⚠️ Buffer cleanup error:', cleanupError.message);
+      }
+    }
+    
+    // Force garbage collection on error
+    if (global.gc) {
+      global.gc();
+      console.log('🧹 [ERROR CLEANUP] Emergency garbage collection triggered');
+    }
+    
     throw error;
   }
 }
