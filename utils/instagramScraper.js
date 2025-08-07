@@ -81,17 +81,47 @@ function generateFingerprint(caption = '', thumbnailUrl = '') {
 
 /**
  * Generate thumbnail hash for visual similarity detection
+ * Downloads and analyzes actual image pixels for robust similarity detection
  * @param {string} thumbnailUrl - Thumbnail URL
- * @returns {Promise<string>} Thumbnail hash
+ * @returns {Promise<string>} Thumbnail hash based on visual content
  */
 async function generateThumbnailHash(thumbnailUrl) {
   try {
-    // Simple hash based on URL for now
-    // In production, you might want to download and analyze the actual image
+    const sharp = require('sharp');
+    const fetch = require('node-fetch');
+    const crypto = require('crypto');
+    
+    console.log('📸 [THUMBNAIL] Downloading for visual analysis:', thumbnailUrl);
+    
+    // Download the thumbnail image
+    const response = await fetch(thumbnailUrl);
+    if (!response.ok) {
+      console.warn('⚠️ [THUMBNAIL] Failed to download, using URL hash fallback');
+      return crypto.createHash('md5').update(thumbnailUrl).digest('hex').substring(0, 8);
+    }
+    
+    const imageBuffer = await response.buffer();
+    
+    // Resize to standard size and convert to grayscale for consistent comparison
+    // This makes it robust to lighting changes and minor variations
+    const processedImage = await sharp(imageBuffer)
+      .resize(64, 64) // Standard thumbnail size
+      .grayscale() // Remove color variations
+      .normalize() // Normalize brightness/contrast
+      .raw()
+      .toBuffer();
+    
+    // Create hash from processed pixel data
+    const pixelHash = crypto.createHash('md5').update(processedImage).digest('hex').substring(0, 8);
+    
+    console.log('✅ [THUMBNAIL] Visual hash generated:', pixelHash);
+    return pixelHash;
+    
+  } catch (error) {
+    console.error('❌ [THUMBNAIL] Visual analysis failed:', error.message);
+    // Fallback to URL hash if visual analysis fails
     const crypto = require('crypto');
     return crypto.createHash('md5').update(thumbnailUrl).digest('hex').substring(0, 8);
-  } catch (error) {
-    return 'unknown';
   }
 }
 

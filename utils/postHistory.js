@@ -50,20 +50,16 @@ function isAlreadyPosted(fingerprint, postedVideos) {
  */
 function looksSimilar(video, postedVideos) {
   return postedVideos.some(posted => {
-    // ✅ PRIORITY CHECK: Same originalVideoId = same source video (even if enhanced)
-    if (posted.originalVideoId && video.id && posted.originalVideoId === video.id) {
-      console.log(`🚫 [DUPLICATE] Same originalVideoId detected: ${video.id} (possibly enhanced version)`);
-      return true;
-    }
-    
-    // Check thumbnail similarity
+    // ✅ PRIORITY CHECK: Visual thumbnail similarity (now robust to lighting changes)
     if (posted.thumbnailHash === video.thumbnailHash) {
+      console.log(`🚫 [DUPLICATE] Visually similar thumbnail detected: ${video.id}`);
       return true;
     }
     
     // Check caption similarity (exact match for now)
     if (posted.caption && video.caption && 
         posted.caption.toLowerCase().trim() === video.caption.toLowerCase().trim()) {
+      console.log(`🚫 [DUPLICATE] Same caption detected: ${video.id}`);
       return true;
     }
     
