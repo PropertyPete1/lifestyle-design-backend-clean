@@ -165,6 +165,16 @@ async function executePostNow(settings) {
 
     for (const video of candidates) {
       console.log(`🔍 Checking video ${video.id} (engagement: ${video.engagement})...`);
+      // Optional quick quality gate: HEAD check content-length >= 8MB (skip very small/low-res)
+      try {
+        const fetch = require('node-fetch');
+        const headResp = await fetch(video.url, { method: 'HEAD' });
+        const size = parseInt(headResp.headers.get('content-length') || '0', 10);
+        if (Number.isFinite(size) && size > 0 && size < 8 * 1024 * 1024) {
+          console.log(`⛔ Skipping video ${video.id} - too small (${size} bytes)`);
+          continue;
+        }
+      } catch (_) {}
       
       // ⛔ Skip if exact ID already posted (from IG or DB logs)
       if (blockedIds.has(video.id)) {
@@ -237,8 +247,11 @@ async function executePostNow(settings) {
     //////////////////////////////////
     
     console.log('✏️ [STEP 5] Generating smart caption...');
-    const { generateSmartCaption } = require('./captionAI');
-    let finalCaption = await generateSmartCaption(selectedVideo.caption, selectedVideo.engagement);
+    const { generateSmartCaptionWithKey } = require('./captionAI');
+    let finalCaption = await generateSmartCaptionWithKey(
+      selectedVideo.caption || '',
+      (settings && settings.openaiApiKey) ? settings.openaiApiKey : null
+    );
     finalCaption = finalCaption.replace(/[-–—]/g, "").trim(); // Remove dashes
     console.log(`✅ [STEP 5] Generated caption: ${finalCaption.substring(0, 100)}...`);
 

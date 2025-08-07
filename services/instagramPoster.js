@@ -43,10 +43,10 @@ async function postToInstagram(options) {
       throw new Error('Video URL is required for Instagram posting');
     }
 
-    // Wait for Instagram video processing
-    console.log('⏰ [IG] Waiting 90 seconds for Instagram video processing...');
-    await new Promise((resolve) => setTimeout(resolve, 90000));
-    console.log('✅ [IG] Instagram video processing wait completed');
+    // Wait/poll for S3 object to be fully available and Instagram ready
+    console.log('⏰ [IG] Initial wait 120 seconds for Instagram video processing...');
+    await new Promise((resolve) => setTimeout(resolve, 120000));
+    console.log('✅ [IG] Initial processing wait completed');
     
     // Step 1: Create media container
     const containerParams = new URLSearchParams({
@@ -76,8 +76,8 @@ async function postToInstagram(options) {
     console.log('✅ [IG API] Container created:', containerId);
     
     // Step 2: Wait for processing
-    console.log('⏰ [IG] Waiting for container processing...');
-    await new Promise((resolve) => setTimeout(resolve, 30000));
+    console.log('⏰ [IG] Waiting for container processing (60s)...');
+    await new Promise((resolve) => setTimeout(resolve, 60000));
     
     // Step 3: Publish the media
     const publishParams = new URLSearchParams({
