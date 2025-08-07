@@ -6,7 +6,6 @@
 const { uploadBufferToS3, generateS3Key } = require('../utils/s3Uploader');
 const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartScheduler');
 const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
-const { getLast30InstagramPosts, getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
 const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
 const { extractFirstFrame } = require('../utils/thumbnailExtractor');
 
@@ -18,7 +17,7 @@ const { extractFirstFrame } = require('../utils/thumbnailExtractor');
  */
 async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
   try {
-    console.log('🤖 [AUTOPILOT] Starting Instagram AutoPilot...');
+    console.log('🤖 [AUTOPILOT] Starting comprehensive autopilot system...');
     
     // Get user settings
     const settings = await SettingsModel.findOne({});
@@ -39,12 +38,14 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     }
     
     // STEP 1: Scrape latest 500 Instagram videos
-    console.log('📱 [AUTOPILOT] Step 1: Scraping Instagram videos...');
+    console.log('📱 [AUTOPILOT] Step 1: Scraping 500 Instagram videos...');
     const scrapedVideos = await scrapeInstagramEngagement(
       settings.igBusinessId, 
       settings.instagramToken, 
       500
     );
+    
+    console.log(`✅ [IG SCRAPER] Scraped ${scrapedVideos.length} videos`);
     
     if (scrapedVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No videos scraped');
@@ -57,14 +58,14 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       .filter(v => v.engagement >= 10000)
       .sort((a, b) => b.engagement - a.engagement); // Highest engagement first
     
-    console.log(`✅ [AUTOPILOT] ${qualifiedVideos.length} videos meet engagement threshold`);
+    console.log(`📊 [AUTOPILOT] Found ${qualifiedVideos.length} high-engagement videos`);
     
     if (qualifiedVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No videos meet engagement threshold');
       return { success: false, message: 'No high-engagement videos found' };
     }
     
-    // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
+    // STEP 3: Filter duplicates using visual thumbnail analysis
     console.log('🔍 [AUTOPILOT] Step 3: Filtering duplicates using visual thumbnail analysis...');
     // Filter duplicates by thumbnail hash within scraped videos
     const seenHashes = new Set();
@@ -90,493 +91,159 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'All videos already posted or similar' };
     }
     
-      // STEP 5: Select multiple videos based on maxPosts setting
-  const videosToProcess = Math.min(uniqueVideos.length, settings.maxPosts || 3);
-  console.log(`🎯 [AUTOPILOT] Step 5: Processing ${videosToProcess} videos`);
-  
-  const allQueuedPosts = [];
-  
-  for (let i = 0; i < videosToProcess; i++) {
-    const selectedVideo = uniqueVideos[i];
-    console.log(`🎯 [AUTOPILOT] Processing video ${i + 1}/${videosToProcess} with ${selectedVideo.engagement} engagement`);
+    // STEP 4: Select videos to process (up to maxPosts setting)
+    const maxPosts = settings.maxPosts || 5;
+    const videosToProcess = uniqueVideos.slice(0, maxPosts);
     
-    // STEP 6: Download video
-    console.log('⬇️ [AUTOPILOT] Step 6: Downloading video...');
-    const videoBuffer = await downloadVideoFromInstagram(selectedVideo.url);
+    console.log(`🎯 [AUTOPILOT] Looking for up to ${maxPosts} videos to queue...`);
     
-    // STEP 7: Upload to S3
-    console.log('☁️ [AUTOPILOT] Step 7: Uploading to S3...');
-    const s3Key = generateS3Key('instagram');
-    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, 'video/mp4');
-    
-    // STEP 7.5: Generate thumbnail from first frame and upload to S3
-    console.log('📸 [AUTOPILOT] Step 7.5: Generating thumbnail from first frame...');
-    let extractedThumbnailUrl = s3Url; // Fallback to video URL
-    
-    try {
-      // For now, just use the S3 video URL as thumbnail URL
-      // This ensures the thumbnailUrl field gets the real S3 URL instead of placeholder
-      extractedThumbnailUrl = s3Url;
-      console.log('✅ [AUTOPILOT] Using S3 video URL as thumbnail:', extractedThumbnailUrl);
-    } catch (error) {
-      console.warn('⚠️ [AUTOPILOT] Thumbnail setup error:', error.message);
-    }
-    
-    // STEP 8: Generate smart caption
-    console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
-    const smartCaption = await generateSmartCaptionWithKey(selectedVideo.caption, settings.openaiApiKey);
-    
-    // STEP 9: Get trending audio (if enabled)
-    let trendingAudio = null;
-    if (settings.useTrendingAudio) {
-      console.log('🎵 [AUTOPILOT] Step 9: Finding trending audio...');
-      trendingAudio = await findTrendingAudio('instagram');
-    }
-    
-    // STEP 10: Calculate smart posting time (spread throughout today)
-    console.log('📅 [AUTOPILOT] Step 10: Calculating optimal posting time...');
-    const existingPosts = await SchedulerQueueModel.find({ status: 'scheduled' });
-    const baseTime = await getNextAvailableSlot('instagram', existingPosts);
-    const scheduledTime = new Date(baseTime.getTime() + (i * 2 * 60 * 60 * 1000)); // 2 hours apart for more posts today
-    
-    // STEP 11: Queue for posting (based on platform settings)
-    console.log('📋 [AUTOPILOT] Step 11: Queueing posts...');
-    const queuedPosts = [];
-    
-    // Queue Instagram post if enabled
-    if (settings.postToInstagram !== false) { // Default to true if not set
-      const instagramPost = await queueVideoForPosting({
-        platform: 'instagram',
-        videoUrl: s3Url,
-        caption: smartCaption,
-        audio: trendingAudio,
-        scheduledTime: scheduledTime,
-        thumbnailUrl: extractedThumbnailUrl,
-        fingerprint: selectedVideo.fingerprint,
-        thumbnailHash: selectedVideo.thumbnailHash,
-        originalVideoId: selectedVideo.id,
-        engagement: selectedVideo.engagement
-      }, SchedulerQueueModel);
-      
-      queuedPosts.push(instagramPost);
-    }
-    
-    // Queue YouTube post if enabled
-    if (settings.postToYouTube) {
-      const youtubeTime = new Date(scheduledTime);
-      youtubeTime.setHours(youtubeTime.getHours() + 2); // 2 hours after Instagram
-      
-      const youtubePost = await queueVideoForPosting({
-        platform: 'youtube',
-        videoUrl: s3Url,
-        caption: smartCaption,
-        scheduledTime: youtubeTime,
-        thumbnailUrl: extractedThumbnailUrl,
-        fingerprint: selectedVideo.fingerprint,
-        thumbnailHash: selectedVideo.thumbnailHash,
-        originalVideoId: selectedVideo.id,
-        engagement: selectedVideo.engagement
-      }, SchedulerQueueModel);
-      
-      queuedPosts.push(youtubePost);
-    }
-    
-    // Add this video's posts to the overall collection
-    allQueuedPosts.push(...queuedPosts);
-    console.log(`✅ [AUTOPILOT] Video ${i + 1} processed! Queued ${queuedPosts.length} posts`);
-  }
-  
-  console.log(`🎉 [AUTOPILOT] ALL VIDEOS PROCESSED! Total queued: ${allQueuedPosts.length} posts`);
-  
-  return {
-    success: true,
-    message: `Processed ${videosToProcess} videos, queued ${allQueuedPosts.length} posts`,
-    videosProcessed: videosToProcess,
-    queuedPosts: allQueuedPosts.map(post => ({
-        platform: post.platform,
-        scheduledTime: post.scheduledTime,
-        status: post.status,
-        videoUrl: post.videoUrl
-      }))
-    };
-    
-  } catch (error) {
-    console.error('❌ [AUTOPILOT ERROR]', error);
-    return { 
-      success: false, 
-      message: `AutoPilot failed: ${error.message}`,
-      error: error.message 
-    };
-  }
-}
-
-/**
- * Queue video for posting
- * @param {Object} postData - Post data
- * @param {Object} SchedulerQueueModel - Queue model
- * @returns {Promise<Object>} Queued post
- */
-async function queueVideoForPosting(postData, SchedulerQueueModel) {
-  try {
-    console.log(`📋 [QUEUE] Queueing ${postData.platform} post for ${postData.scheduledTime}`);
-    
-    console.log('🔍 [DEBUG] Saving to queue:', {
-      platform: postData.platform,
-      s3Url: postData.videoUrl,
-      thumbnailUrl: postData.thumbnailUrl,
-      videoUrl: postData.videoUrl
+    // Log selected videos
+    videosToProcess.forEach((video, index) => {
+      console.log(`🎯 [AUTOPILOT] Selected video ${index + 1}/${maxPosts} with ${video.engagement} engagement`);
     });
     
-    const queuedPost = new SchedulerQueueModel({
-      platform: postData.platform,
-      s3Url: postData.videoUrl, // Save as s3Url to match schema
-      caption: postData.caption,
-      audio: postData.audio,
-      scheduledTime: postData.scheduledTime,
-      thumbnailUrl: postData.thumbnailUrl,
-      fingerprint: postData.fingerprint,
-      thumbnailHash: postData.thumbnailHash,
-      originalVideoId: postData.originalVideoId,
-      engagement: postData.engagement,
-      status: 'scheduled',
-      createdAt: new Date(),
-      source: 'autopilot'
-    });
+    console.log(`🔄 [AUTOPILOT] Processing ${videosToProcess.length} selected videos...`);
     
-    await queuedPost.save();
-    
-    console.log(`✅ [QUEUE] ${postData.platform} post queued successfully`);
-    return queuedPost;
-    
-  } catch (error) {
-    console.error('❌ [QUEUE ERROR]', error);
-    throw error;
-  }
-}
-
-/**
- * Mark post as completed and trigger next autopilot run
- * @param {string} platform - Platform name
- * @param {string} postId - Post ID
- * @param {Object} SchedulerQueueModel - Queue model
- * @param {Object} SettingsModel - Settings model
- * @returns {Promise<void>}
- */
-async function markAsPostedAndRefill(platform, postId, SchedulerQueueModel, SettingsModel) {
-  try {
-    console.log(`✅ [REFILL] Marking ${platform} post as completed: ${postId}`);
-    
-    await SchedulerQueueModel.updateOne(
-      { _id: postId }, 
-      { 
-        $set: { 
-          status: 'posted',
-          postedAt: new Date()
+    // STEP 5: Process each video
+    let processedCount = 0;
+    for (let i = 0; i < videosToProcess.length; i++) {
+      const video = videosToProcess[i];
+      console.log(`📹 [AUTOPILOT] Processing video ${i + 1}/${videosToProcess.length}...`);
+      
+      try {
+        // Download video from Instagram
+        console.log('⬇️ [AUTOPILOT] Downloading video from Instagram...');
+        console.log(`🔗 [DEBUG] Video URL: ${video.url}`);
+        console.log(`📥 [DEBUG] Downloading video from Instagram URL: ${video.url}`);
+        
+        const videoBuffer = await downloadVideoFromInstagram(video.url);
+        console.log(`✅ [DEBUG] Video downloaded, buffer size: ${videoBuffer.length}`);
+        
+        // Upload to S3
+        const s3Key = generateS3Key('auto', video.id);
+        console.log(`☁️ [DEBUG] Starting S3 upload with key: ${s3Key}`);
+        
+        const s3Url = await uploadBufferToS3(videoBuffer, s3Key, 'video/mp4');
+        console.log(`🔗 [DEBUG] S3 upload result: ${s3Url}`);
+        
+        if (!s3Url) {
+          console.log(`❌ [AUTOPILOT] S3 upload failed for video ${video.id}`);
+          continue;
         }
-      }
-    );
-    
-    // Trigger next autopilot run to refill the queue
-    if (platform === 'instagram') {
-      console.log('🔄 [REFILL] Triggering next autopilot run...');
-      setTimeout(() => {
-        runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
-      }, 5000); // Wait 5 seconds before refilling
-    }
-    
-  } catch (error) {
-    console.error('❌ [REFILL ERROR]', error);
-  }
-}
-
-module.exports = {
-  runInstagramAutoPilot,
-  queueVideoForPosting,
-  markAsPostedAndRefill
-};
- * Core Autopilot Logic - Instagram + YouTube Automated Posting
- * Scrapes high-engagement videos, uploads to S3, schedules posts
- */
-
-const { uploadBufferToS3, generateS3Key } = require('../utils/s3Uploader');
-const { getSmartSchedulerTime, getNextAvailableSlot } = require('../utils/smartScheduler');
-const { scrapeInstagramEngagement, downloadVideoFromInstagram } = require('../utils/instagramScraper');
-const { getLast30InstagramPosts, getLast30PostedVideos, filterUniqueVideos } = require('../utils/postHistory');
-const { generateSmartCaptionWithKey, findTrendingAudio } = require('../services/captionAI');
-const { extractFirstFrame } = require('../utils/thumbnailExtractor');
-
-/**
- * Run Instagram AutoPilot - Main autopilot function
- * @param {Object} SettingsModel - Settings mongoose model
- * @param {Object} SchedulerQueueModel - Queue mongoose model
- * @returns {Promise<Object>} Autopilot result
- */
-async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
-  try {
-    console.log('🤖 [AUTOPILOT] Starting Instagram AutoPilot...');
-    
-    // Get user settings
-    const settings = await SettingsModel.findOne({});
-    if (!settings || !settings.autopilotEnabled) {
-      console.log('⚠️ [AUTOPILOT] AutoPilot disabled or no settings found');
-      return { success: false, message: 'AutoPilot disabled' };
-    }
-    
-    // Check required credentials
-    if (!settings.instagramToken || !settings.igBusinessId) {
-      console.log('⚠️ [AUTOPILOT] Missing Instagram credentials');
-      return { success: false, message: 'Missing Instagram credentials' };
-    }
-    
-    if (!settings.s3AccessKey || !settings.s3SecretKey || !settings.s3BucketName) {
-      console.log('⚠️ [AUTOPILOT] Missing S3 credentials');
-      return { success: false, message: 'Missing S3 credentials' };
-    }
-    
-    // STEP 1: Scrape latest 500 Instagram videos
-    console.log('📱 [AUTOPILOT] Step 1: Scraping Instagram videos...');
-    const scrapedVideos = await scrapeInstagramEngagement(
-      settings.igBusinessId, 
-      settings.instagramToken, 
-      500
-    );
-    
-    if (scrapedVideos.length === 0) {
-      console.log('⚠️ [AUTOPILOT] No videos scraped');
-      return { success: false, message: 'No videos found' };
-    }
-    
-    // STEP 2: Filter by engagement (≥ 10,000)
-    console.log('📊 [AUTOPILOT] Step 2: Filtering by engagement...');
-    const qualifiedVideos = scrapedVideos
-      .filter(v => v.engagement >= 10000)
-      .sort((a, b) => b.engagement - a.engagement); // Highest engagement first
-    
-    console.log(`✅ [AUTOPILOT] ${qualifiedVideos.length} videos meet engagement threshold`);
-    
-    if (qualifiedVideos.length === 0) {
-      console.log('⚠️ [AUTOPILOT] No videos meet engagement threshold');
-      return { success: false, message: 'No high-engagement videos found' };
-    }
-    
-    // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
-    console.log('🔍 [AUTOPILOT] Step 3: Filtering duplicates using visual thumbnail analysis...');
-    // Filter duplicates by thumbnail hash within scraped videos
-    const seenHashes = new Set();
-    const uniqueVideos = [];
-    
-    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos for duplicate thumbnails...`);
-    
-    for (const video of qualifiedVideos) {
-      if (seenHashes.has(video.thumbnailHash)) {
-        console.log(`⏭️ [THUMBNAIL FILTER] Skipping duplicate thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
+        
+        console.log(`✅ [AUTOPILOT] S3 upload successful: ${s3Url}`);
+        
+        // Generate smart caption
+        console.log('🧠 [AUTOPILOT] Generating smart caption...');
+        const enhancedCaption = await generateSmartCaptionWithKey(video.caption, settings.openaiApiKey);
+        
+        // Calculate scheduled times
+        const instagramTime = await getSmartSchedulerTime('instagram', i, SchedulerQueueModel);
+        const youtubeTime = await getSmartSchedulerTime('youtube', i, SchedulerQueueModel);
+        
+        // Queue for Instagram
+        const instagramPost = {
+          platform: 'instagram',
+          source: 'autopilot',
+          originalVideoId: video.id,
+          videoUrl: s3Url,
+          thumbnailUrl: s3Url, // Use S3 URL as thumbnail
+          thumbnailHash: video.thumbnailHash,
+          caption: enhancedCaption,
+          hashtags: video.hashtags || [],
+          engagement: video.engagement,
+          scheduledTime: instagramTime,
+          status: 'pending'
+        };
+        
+        await queueVideoForPosting(instagramPost, SchedulerQueueModel);
+        console.log(`📅 [AUTOPILOT] Scheduled instagram post ${i + 1} for ${instagramTime.toLocaleString()}`);
+        
+        // Queue for YouTube (same video, different time)
+        const youtubePost = {
+          platform: 'youtube',
+          source: 'autopilot',
+          originalVideoId: video.id,
+          videoUrl: s3Url,
+          thumbnailUrl: s3Url,
+          thumbnailHash: video.thumbnailHash,
+          caption: enhancedCaption,
+          hashtags: video.hashtags || [],
+          engagement: video.engagement,
+          scheduledTime: youtubeTime,
+          status: 'pending'
+        };
+        
+        await queueVideoForPosting(youtubePost, SchedulerQueueModel);
+        console.log(`📅 [AUTOPILOT] Scheduled youtube post ${i + 1} for ${youtubeTime.toLocaleString()}`);
+        
+        processedCount++;
+        
+      } catch (error) {
+        console.error(`❌ [AUTOPILOT] Error processing video ${video.id}:`, error);
         continue;
       }
-      
-      seenHashes.add(video.thumbnailHash);
-      uniqueVideos.push(video);
-      console.log(`✅ [THUMBNAIL FILTER] Unique thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
     }
     
-    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos with unique thumbnails`);
+    console.log(`✅ [AUTOPILOT] Comprehensive autopilot run completed successfully - ${processedCount} videos processed`);
     
-    if (uniqueVideos.length === 0) {
-      console.log('⚠️ [AUTOPILOT] No unique videos found');
-      return { success: false, message: 'All videos already posted or similar' };
-    }
-    
-      // STEP 5: Select multiple videos based on maxPosts setting
-  const videosToProcess = Math.min(uniqueVideos.length, settings.maxPosts || 3);
-  console.log(`🎯 [AUTOPILOT] Step 5: Processing ${videosToProcess} videos`);
-  
-  const allQueuedPosts = [];
-  
-  for (let i = 0; i < videosToProcess; i++) {
-    const selectedVideo = uniqueVideos[i];
-    console.log(`🎯 [AUTOPILOT] Processing video ${i + 1}/${videosToProcess} with ${selectedVideo.engagement} engagement`);
-    
-    // STEP 6: Download video
-    console.log('⬇️ [AUTOPILOT] Step 6: Downloading video...');
-    const videoBuffer = await downloadVideoFromInstagram(selectedVideo.url);
-    
-    // STEP 7: Upload to S3
-    console.log('☁️ [AUTOPILOT] Step 7: Uploading to S3...');
-    const s3Key = generateS3Key('instagram');
-    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, 'video/mp4');
-    
-    // STEP 7.5: Generate thumbnail from first frame and upload to S3
-    console.log('📸 [AUTOPILOT] Step 7.5: Generating thumbnail from first frame...');
-    let extractedThumbnailUrl = s3Url; // Fallback to video URL
-    
-    try {
-      // For now, just use the S3 video URL as thumbnail URL
-      // This ensures the thumbnailUrl field gets the real S3 URL instead of placeholder
-      extractedThumbnailUrl = s3Url;
-      console.log('✅ [AUTOPILOT] Using S3 video URL as thumbnail:', extractedThumbnailUrl);
-    } catch (error) {
-      console.warn('⚠️ [AUTOPILOT] Thumbnail setup error:', error.message);
-    }
-    
-    // STEP 8: Generate smart caption
-    console.log('✍️ [AUTOPILOT] Step 8: Generating smart caption...');
-    const smartCaption = await generateSmartCaptionWithKey(selectedVideo.caption, settings.openaiApiKey);
-    
-    // STEP 9: Get trending audio (if enabled)
-    let trendingAudio = null;
-    if (settings.useTrendingAudio) {
-      console.log('🎵 [AUTOPILOT] Step 9: Finding trending audio...');
-      trendingAudio = await findTrendingAudio('instagram');
-    }
-    
-    // STEP 10: Calculate smart posting time (spread throughout today)
-    console.log('📅 [AUTOPILOT] Step 10: Calculating optimal posting time...');
-    const existingPosts = await SchedulerQueueModel.find({ status: 'scheduled' });
-    const baseTime = await getNextAvailableSlot('instagram', existingPosts);
-    const scheduledTime = new Date(baseTime.getTime() + (i * 2 * 60 * 60 * 1000)); // 2 hours apart for more posts today
-    
-    // STEP 11: Queue for posting (based on platform settings)
-    console.log('📋 [AUTOPILOT] Step 11: Queueing posts...');
-    const queuedPosts = [];
-    
-    // Queue Instagram post if enabled
-    if (settings.postToInstagram !== false) { // Default to true if not set
-      const instagramPost = await queueVideoForPosting({
-        platform: 'instagram',
-        videoUrl: s3Url,
-        caption: smartCaption,
-        audio: trendingAudio,
-        scheduledTime: scheduledTime,
-        thumbnailUrl: extractedThumbnailUrl,
-        fingerprint: selectedVideo.fingerprint,
-        thumbnailHash: selectedVideo.thumbnailHash,
-        originalVideoId: selectedVideo.id,
-        engagement: selectedVideo.engagement
-      }, SchedulerQueueModel);
-      
-      queuedPosts.push(instagramPost);
-    }
-    
-    // Queue YouTube post if enabled
-    if (settings.postToYouTube) {
-      const youtubeTime = new Date(scheduledTime);
-      youtubeTime.setHours(youtubeTime.getHours() + 2); // 2 hours after Instagram
-      
-      const youtubePost = await queueVideoForPosting({
-        platform: 'youtube',
-        videoUrl: s3Url,
-        caption: smartCaption,
-        scheduledTime: youtubeTime,
-        thumbnailUrl: extractedThumbnailUrl,
-        fingerprint: selectedVideo.fingerprint,
-        thumbnailHash: selectedVideo.thumbnailHash,
-        originalVideoId: selectedVideo.id,
-        engagement: selectedVideo.engagement
-      }, SchedulerQueueModel);
-      
-      queuedPosts.push(youtubePost);
-    }
-    
-    // Add this video's posts to the overall collection
-    allQueuedPosts.push(...queuedPosts);
-    console.log(`✅ [AUTOPILOT] Video ${i + 1} processed! Queued ${queuedPosts.length} posts`);
-  }
-  
-  console.log(`🎉 [AUTOPILOT] ALL VIDEOS PROCESSED! Total queued: ${allQueuedPosts.length} posts`);
-  
-  return {
-    success: true,
-    message: `Processed ${videosToProcess} videos, queued ${allQueuedPosts.length} posts`,
-    videosProcessed: videosToProcess,
-    queuedPosts: allQueuedPosts.map(post => ({
-        platform: post.platform,
-        scheduledTime: post.scheduledTime,
-        status: post.status,
-        videoUrl: post.videoUrl
-      }))
+    return {
+      success: true,
+      message: `Autopilot completed successfully`,
+      processed: processedCount,
+      total: videosToProcess.length
     };
     
   } catch (error) {
-    console.error('❌ [AUTOPILOT ERROR]', error);
-    return { 
-      success: false, 
-      message: `AutoPilot failed: ${error.message}`,
-      error: error.message 
-    };
+    console.error('❌ [AUTOPILOT] Critical error:', error);
+    return { success: false, message: 'Autopilot failed', error: error.message };
   }
 }
 
 /**
- * Queue video for posting
- * @param {Object} postData - Post data
- * @param {Object} SchedulerQueueModel - Queue model
- * @returns {Promise<Object>} Queued post
+ * Queue a video for posting
+ * @param {Object} postData - Post data object
+ * @param {Object} SchedulerQueueModel - Queue mongoose model
  */
 async function queueVideoForPosting(postData, SchedulerQueueModel) {
   try {
-    console.log(`📋 [QUEUE] Queueing ${postData.platform} post for ${postData.scheduledTime}`);
-    
-    console.log('🔍 [DEBUG] Saving to queue:', {
-      platform: postData.platform,
-      s3Url: postData.videoUrl,
-      thumbnailUrl: postData.thumbnailUrl,
-      videoUrl: postData.videoUrl
-    });
-    
-    const queuedPost = new SchedulerQueueModel({
-      platform: postData.platform,
-      s3Url: postData.videoUrl, // Save as s3Url to match schema
-      caption: postData.caption,
-      audio: postData.audio,
-      scheduledTime: postData.scheduledTime,
-      thumbnailUrl: postData.thumbnailUrl,
-      fingerprint: postData.fingerprint,
-      thumbnailHash: postData.thumbnailHash,
-      originalVideoId: postData.originalVideoId,
-      engagement: postData.engagement,
-      status: 'scheduled',
-      createdAt: new Date(),
-      source: 'autopilot'
-    });
-    
-    await queuedPost.save();
-    
-    console.log(`✅ [QUEUE] ${postData.platform} post queued successfully`);
-    return queuedPost;
-    
+    const newPost = new SchedulerQueueModel(postData);
+    await newPost.save();
+    console.log(`✅ [QUEUE] Added ${postData.platform} post to queue: ${postData.originalVideoId}`);
   } catch (error) {
-    console.error('❌ [QUEUE ERROR]', error);
-    throw error;
+    console.error(`❌ [QUEUE] Failed to add ${postData.platform} post:`, error);
   }
 }
 
 /**
- * Mark post as completed and trigger next autopilot run
+ * Mark a post as posted and trigger refill
  * @param {string} platform - Platform name
  * @param {string} postId - Post ID
- * @param {Object} SchedulerQueueModel - Queue model
- * @param {Object} SettingsModel - Settings model
- * @returns {Promise<void>}
+ * @param {Object} SchedulerQueueModel - Queue mongoose model
+ * @param {Object} SettingsModel - Settings mongoose model
  */
 async function markAsPostedAndRefill(platform, postId, SchedulerQueueModel, SettingsModel) {
   try {
-    console.log(`✅ [REFILL] Marking ${platform} post as completed: ${postId}`);
+    // Mark as posted
+    await SchedulerQueueModel.findByIdAndUpdate(postId, { 
+      status: 'posted',
+      postedAt: new Date()
+    });
     
-    await SchedulerQueueModel.updateOne(
-      { _id: postId }, 
-      { 
-        $set: { 
-          status: 'posted',
-          postedAt: new Date()
-        }
-      }
-    );
+    console.log(`✅ [REFILL] Marked ${platform} post as posted: ${postId}`);
     
-    // Trigger next autopilot run to refill the queue
-    if (platform === 'instagram') {
-      console.log('🔄 [REFILL] Triggering next autopilot run...');
-      setTimeout(() => {
-        runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
-      }, 5000); // Wait 5 seconds before refilling
+    // Check if we need to refill the queue
+    const pendingPosts = await SchedulerQueueModel.countDocuments({ 
+      platform, 
+      status: 'pending' 
+    });
+    
+    console.log(`📊 [REFILL] ${pendingPosts} pending ${platform} posts remaining`);
+    
+    // If less than 3 posts remaining, trigger refill
+    if (pendingPosts < 3) {
+      console.log(`🔄 [REFILL] Triggering autopilot refill for ${platform}...`);
+      await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
     }
     
   } catch (error) {
