@@ -45,9 +45,11 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'Missing S3 credentials' };
     }
     
-    // STEP 1: Scrape latest 200 Instagram videos (reduced to prevent timeouts)
-    console.log('📱 [AUTOPILOT] Step 1: Scraping 200 Instagram videos...');
-    const scrapedVideos = await scrapeInstagramEngagement(
+    // STEP 1: Scrape Instagram publicly for real view counts, then match with API
+    console.log('📱 [AUTOPILOT] Step 1: Scraping Lifestyle Design Realty Texas for real view counts...');
+    const { scrapePublicInstagramWithViews } = require('../utils/publicInstagramScraper');
+    const scrapedVideos = await scrapePublicInstagramWithViews(
+      'lifestyledesignrealtytexas', // Your Instagram handle
       settings.igBusinessId, 
       settings.instagramToken, 
       200
@@ -60,10 +62,10 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
       return { success: false, message: 'No videos found' };
     }
     
-    // STEP 2: Filter by engagement (≥ 1,000 temporarily to test)
+    // STEP 2: Filter by engagement (≥ 10,000 views + likes + comments)
     console.log('📊 [AUTOPILOT] Step 2: Filtering by engagement...');
     const qualifiedVideos = scrapedVideos
-      .filter(v => v.engagement >= 1000)
+      .filter(v => v.engagement >= 10000)
       .sort((a, b) => b.engagement - a.engagement); // Highest engagement first
     
     console.log(`📊 [AUTOPILOT] Found ${qualifiedVideos.length} high-engagement videos`);
