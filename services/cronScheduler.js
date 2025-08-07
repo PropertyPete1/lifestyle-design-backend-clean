@@ -148,34 +148,56 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
           await triggerAutopilotRefill(SchedulerQueueModel, SettingsModel);
           
         } else {
-          // ✅ Keep failed posts in queue for retry (don't mark as failed)
-          await SchedulerQueueModel.updateOne(
-            { _id: post._id },
-            { 
-              status: 'scheduled', // Reset to scheduled for retry
-              lastAttempt: new Date(),
-              retryCount: (post.retryCount || 0) + 1
-            }
-          );
+          const currentRetryCount = (post.retryCount || 0) + 1;
           
-          console.warn(`⚠️ [SKIPPED] Instagram post failed. Leaving post in queue for retry. Attempt ${(post.retryCount || 0) + 1}`);
+          // ✅ FIX 2: Automatically remove posts from queue if they fail too many times
+          if (currentRetryCount >= 3) {
+            await SchedulerQueueModel.updateOne(
+              { _id: post._id },
+              { status: 'failed', failedAt: new Date(), retryCount: currentRetryCount }
+            );
+            console.log(`⚠️ [ROTATION] Post ${post._id} failed 3 times — marked as failed and will be rotated out.`);
+          } else {
+            // ✅ Keep failed posts in queue for retry (don't mark as failed)
+            await SchedulerQueueModel.updateOne(
+              { _id: post._id },
+              { 
+                status: 'scheduled', // Reset to scheduled for retry
+                lastAttempt: new Date(),
+                retryCount: currentRetryCount
+              }
+            );
+            
+            console.warn(`⚠️ [SKIPPED] Instagram post failed. Leaving post in queue for retry. Attempt ${currentRetryCount}`);
+          }
         }
         
       } catch (postError) {
         console.error(`❌ [CRON] Error executing post ${post._id}:`, postError);
         
-        // ✅ Keep failed posts in queue for retry
-        await SchedulerQueueModel.updateOne(
-          { _id: post._id },
-          { 
-            status: 'scheduled', // Reset to scheduled for retry
-            lastAttempt: new Date(),
-            retryCount: (post.retryCount || 0) + 1,
-            lastError: postError.message
-          }
-        );
+        const currentRetryCount = (post.retryCount || 0) + 1;
         
-        console.warn(`⚠️ [SKIPPED] Post execution failed. Leaving post in queue for retry.`);
+        // ✅ FIX 2: Automatically remove posts from queue if they fail too many times
+        if (currentRetryCount >= 3) {
+          await SchedulerQueueModel.updateOne(
+            { _id: post._id },
+            { status: 'failed', failedAt: new Date(), retryCount: currentRetryCount, lastError: postError.message }
+          );
+          console.log(`⚠️ [ROTATION] Post ${post._id} failed 3 times — marked as failed and will be rotated out.`);
+        } else {
+          // ✅ Keep failed posts in queue for retry
+          await SchedulerQueueModel.updateOne(
+            { _id: post._id },
+            { 
+              status: 'scheduled', // Reset to scheduled for retry
+              lastAttempt: new Date(),
+              retryCount: currentRetryCount,
+              lastError: postError.message
+            }
+          );
+          
+          console.warn(`⚠️ [SKIPPED] Post execution failed. Leaving post in queue for retry. Attempt ${currentRetryCount}`);
+        }
       }
       
       // Small delay between posts to avoid rate limiting
