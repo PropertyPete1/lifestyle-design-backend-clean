@@ -94,7 +94,14 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     // STEP 7: Upload to S3
     console.log('☁️ [AUTOPILOT] Step 7: Uploading to S3...');
     const s3Key = generateS3Key('instagram');
-    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
+    // Use environment variables for S3 since they're set in Render
+    const s3Settings = {
+      s3AccessKey: process.env.AWS_ACCESS_KEY_ID,
+      s3SecretKey: process.env.AWS_SECRET_ACCESS_KEY,
+      s3Region: process.env.AWS_REGION || 'us-east-1',
+      s3BucketName: process.env.S3_BUCKET_NAME
+    };
+    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, s3Settings);
     
     // STEP 7.5: Generate thumbnail from first frame and upload to S3
     console.log('📸 [AUTOPILOT] Step 7.5: Generating thumbnail from first frame...');
@@ -369,7 +376,14 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     // STEP 7: Upload to S3
     console.log('☁️ [AUTOPILOT] Step 7: Uploading to S3...');
     const s3Key = generateS3Key('instagram');
-    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, settings);
+    // Use environment variables for S3 since they're set in Render
+    const s3Settings = {
+      s3AccessKey: process.env.AWS_ACCESS_KEY_ID,
+      s3SecretKey: process.env.AWS_SECRET_ACCESS_KEY,
+      s3Region: process.env.AWS_REGION || 'us-east-1',
+      s3BucketName: process.env.S3_BUCKET_NAME
+    };
+    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, s3Settings);
     
     // STEP 7.5: Generate thumbnail from first frame and upload to S3
     console.log('📸 [AUTOPILOT] Step 7.5: Generating thumbnail from first frame...');
