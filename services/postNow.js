@@ -105,11 +105,17 @@ async function executePostNow(settings) {
     
     // Build robust visual hashes for last 30 posts sequentially (thumbnail-based, low memory)
     const { generateThumbnailHash } = require('../utils/instagramScraper');
+    const { computeAverageHashFromImageUrl, hammingDistance } = require('../utils/visualHash');
     const last30Hashes = [];
+    const last30Ahashes = [];
     for (const post of last30) {
       try {
         const h = await generateThumbnailHash(post.thumbnailUrl || post.url || '');
         last30Hashes.push(h);
+        try {
+          const ah = await computeAverageHashFromImageUrl(post.thumbnailUrl || post.url || '');
+          last30Ahashes.push(ah);
+        } catch (_) {}
       } catch (e) {
         console.warn('⚠️ [STEP 1] Thumbnail hash failed for past post, skipping:', e.message);
       }
@@ -172,15 +178,18 @@ async function executePostNow(settings) {
 
       // Compute robust thumbnail visual hash for candidate (sequential; avoids full video download)
       let hash;
+      let candidateAhash = null;
       try {
         hash = await generateThumbnailHash(video.thumbnailUrl || video.url || '');
+        candidateAhash = await computeAverageHashFromImageUrl(video.thumbnailUrl || video.url || '');
       } catch (e) {
         const crypto = require('crypto');
         const fallback = (video.thumbnailUrl || video.url || '').toLowerCase();
         hash = crypto.createHash('md5').update(fallback).digest('hex').substring(0, 16);
       }
 
-      const isDuplicateVisual = last30Hashes.includes(hash);
+      const isDuplicateVisual = last30Hashes.includes(hash)
+        || (candidateAhash && last30Ahashes.some(past => hammingDistance(candidateAhash, past) <= 6));
       const isDuplicateCaption = last30Captions.some((c) => {
         const a = (video.caption || '').toLowerCase();
         const b = (c || '').toLowerCase();
