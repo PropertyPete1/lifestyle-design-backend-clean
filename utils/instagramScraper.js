@@ -17,7 +17,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
     console.log(`🕷️ [IG SCRAPER] Scraping ${limit} videos for engagement data`);
     
     const videos = [];
-    let nextPageUrl = `https://graph.facebook.com/v19.0/${businessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,timestamp,permalink&limit=50&access_token=${accessToken}`;
+    let nextPageUrl = `https://graph.facebook.com/v19.0/${businessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,play_count,timestamp,permalink&limit=50&access_token=${accessToken}`;
     
     while (videos.length < limit && nextPageUrl) {
       console.log(`🔍 [IG SCRAPER] Fetching page... (${videos.length}/${limit})`);
@@ -33,7 +33,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
       // Process videos from this page
       for (const media of data.data || []) {
         if (media.media_type === 'VIDEO') {
-          const engagement = (media.like_count || 0) + (media.comments_count || 0);
+          const engagement = (media.play_count || 0) + (media.like_count || 0) + (media.comments_count || 0);
           
           videos.push({
             id: media.id,
@@ -42,6 +42,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500) {
             caption: media.caption || '',
             likes: media.like_count || 0,
             comments: media.comments_count || 0,
+            views: media.play_count || 0,
             engagement: engagement,
             timestamp: media.timestamp,
             permalink: media.permalink,
