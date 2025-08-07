@@ -15,13 +15,21 @@ async function getLast30InstagramPosts(settings) {
   try {
     console.log(`📱 [INSTAGRAM API] Fetching last 30 posts from your Instagram account...`);
     
+    // Validate Instagram credentials
+    if (!settings.igBusinessId || !settings.instagramToken) {
+      console.error('❌ [INSTAGRAM API] Missing credentials - igBusinessId or instagramToken not found');
+      return [];
+    }
+    
     const mediaUrl = `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,permalink&limit=30&access_token=${settings.instagramToken}`;
     
     const response = await fetch(mediaUrl);
     const data = await response.json();
     
     if (!response.ok) {
-      console.error('❌ [INSTAGRAM API] Error:', data);
+      console.error('❌ [INSTAGRAM API] HTTP Error:', response.status, response.statusText);
+      console.error('❌ [INSTAGRAM API] Response:', data);
+      console.error('❌ [INSTAGRAM API] URL:', mediaUrl.replace(settings.instagramToken, 'TOKEN_HIDDEN'));
       return [];
     }
     

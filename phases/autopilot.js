@@ -66,7 +66,13 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     
     // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
     console.log('📱 [AUTOPILOT] Step 3: Checking your actual Instagram posts...');
-    const last30Posted = await getLast30InstagramPosts(settings);
+    let last30Posted = await getLast30InstagramPosts(settings);
+    
+    // Fallback: If Instagram API fails, use database method
+    if (last30Posted.length === 0) {
+      console.log('⚠️ [AUTOPILOT] Instagram API returned 0 posts, falling back to database method...');
+      last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    }
     
     // STEP 4: Filter out duplicates and similar videos
     console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates...');
@@ -348,7 +354,13 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     
     // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
     console.log('📱 [AUTOPILOT] Step 3: Checking your actual Instagram posts...');
-    const last30Posted = await getLast30InstagramPosts(settings);
+    let last30Posted = await getLast30InstagramPosts(settings);
+    
+    // Fallback: If Instagram API fails, use database method
+    if (last30Posted.length === 0) {
+      console.log('⚠️ [AUTOPILOT] Instagram API returned 0 posts, falling back to database method...');
+      last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    }
     
     // STEP 4: Filter out duplicates and similar videos
     console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates...');
