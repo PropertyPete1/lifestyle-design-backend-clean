@@ -14,6 +14,8 @@ const FormData = require('form-data');
  */
 async function postToInstagram(postData, settings) {
   try {
+    // ✅ Sanity check: log scheduled time + caption
+    console.log(`🕖 [POST TO IG] Running for ${postData.scheduledTime} | Caption: ${postData.caption?.slice(0, 40)}...`);
     console.log('📱 [INSTAGRAM POST] Starting Instagram post...');
     
     if (!settings.instagramToken || !settings.igBusinessId) {
@@ -22,11 +24,13 @@ async function postToInstagram(postData, settings) {
     
     const { s3Url, caption, trendingAudio } = postData;
     
-    // Step 1: Create media container
+    // ✅ Step 1: Create container
     const containerParams = new URLSearchParams({
-      video_url: s3Url,
+      media_type: 'REELS',
+      video_url: s3Url, // ✅ must be public S3 link
       caption: caption,
-      access_token: settings.instagramToken
+      access_token: settings.instagramToken,
+      share_to_feed: 'true'
     });
     
     if (trendingAudio) {
@@ -34,7 +38,7 @@ async function postToInstagram(postData, settings) {
     }
     
     const containerResponse = await fetch(
-      `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media`,
+      `https://graph.facebook.com/v18.0/${settings.igBusinessId}/media`,
       {
         method: 'POST',
         body: containerParams
@@ -43,20 +47,21 @@ async function postToInstagram(postData, settings) {
     
     const containerData = await containerResponse.json();
     
-    if (!containerResponse.ok) {
-      throw new Error(`Container creation failed: ${containerData.error?.message || 'Unknown error'}`);
+    if (!containerData.id) {
+      console.error('❌ [IG ERROR] Failed to create media container:', containerData);
+      throw new Error('Instagram container creation failed');
     }
     
     console.log('📦 [INSTAGRAM] Media container created:', containerData.id);
     
-    // Step 2: Publish the media
+    // ✅ Step 2: Publish the post
     const publishParams = new URLSearchParams({
       creation_id: containerData.id,
       access_token: settings.instagramToken
     });
     
     const publishResponse = await fetch(
-      `https://graph.facebook.com/v19.0/${settings.igBusinessId}/media_publish`,
+      `https://graph.facebook.com/v18.0/${settings.igBusinessId}/media_publish`,
       {
         method: 'POST',
         body: publishParams
@@ -65,11 +70,12 @@ async function postToInstagram(postData, settings) {
     
     const publishData = await publishResponse.json();
     
-    if (!publishResponse.ok) {
-      throw new Error(`Publishing failed: ${publishData.error?.message || 'Unknown error'}`);
+    if (!publishData.id) {
+      console.error('❌ [IG ERROR] Failed to publish media:', publishData);
+      throw new Error('Instagram post publish failed');
     }
     
-    console.log('✅ [INSTAGRAM] Post published successfully:', publishData.id);
+    console.log(`✅ [IG POSTED] Post ID: ${publishData.id}`);
     
     return {
       success: true,
@@ -80,13 +86,8 @@ async function postToInstagram(postData, settings) {
     };
     
   } catch (error) {
-    console.error('❌ [INSTAGRAM POST ERROR]', error);
-    return {
-      success: false,
-      platform: 'instagram',
-      error: error.message,
-      caption: postData.caption
-    };
+    console.error('🚨 [POST TO IG ERROR]', error);
+    return false;
   }
 }
 
