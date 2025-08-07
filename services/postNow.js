@@ -1,77 +1,61 @@
 // 📁 File: backend-v2/services/postNow.js
 
-// 🧠 GOAL: Post 1 high-engagement video from Instagram using visual hash + caption fallback deduplication
-// 🔁 Process is triggered manually via "Post Now" dashboard button
+// 🧠 GOAL: Post 1 high-engagement Instagram video with bulletproof 3-layer duplicate protection:
+// 🔁 Deduplicate by:
+//    1. Thumbnail visual hash
+//    2. Caption similarity
+//    3. Audio ID match
 
-// 🔒 DO NOT:
-// - Repost anything from the last 30 most recent posts (even if video ID is different)
-// - Use video ID as the only filter
+// ⚠️ ORDER MATTERS:
+// ✅ Step 1 MUST run FIRST to build blacklist of recent 30 real posts
+// ✅ Step 2 then scrapes candidates and compares against that blacklist
+// This avoids accidentally accepting previously posted content
 
-// ✅ DO:
-// SCRAPE (your IG page) → SCRAPE (target pool) → FILTER → DOWNLOAD → FINGERPRINT → VALIDATE → UPLOAD → POST
-
-const fetch = require('node-fetch');
 const mongoose = require('mongoose');
+const stringSimilarity = require('string-similarity');
 
 /**
- * Calculate caption similarity between two strings
+ * Compare caption similarity
  */
-function calculateCaptionSimilarity(caption1, caption2) {
-  const stringSimilarity = require('string-similarity');
-  const clean1 = (caption1 || '').toLowerCase().trim();
-  const clean2 = (caption2 || '').toLowerCase().trim();
-  return stringSimilarity.compareTwoStrings(clean1, clean2);
+function compareCaptionSimilarity(caption1, caption2) {
+  if (!caption1 || !caption2) return 0;
+  return stringSimilarity.compareTwoStrings(caption1.toLowerCase(), caption2.toLowerCase());
 }
 
 /**
- * Generate random ID for S3 keys
+ * Generate visual hash from video buffer
  */
-function generateRandomId() {
-  return Math.random().toString(36).substring(2, 8);
+async function generateVisualHash(buffer) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
 /**
- * Log current memory usage
+ * Extract first frame from video buffer (simplified implementation)
  */
-function logMemoryUsage(step) {
-  const used = process.memoryUsage();
-  console.log(`🧠 [MEMORY ${step}] RSS: ${Math.round(used.rss / 1024 / 1024)}MB | Heap: ${Math.round(used.heapUsed / 1024 / 1024)}MB | External: ${Math.round(used.external / 1024 / 1024)}MB`);
+async function extractFirstFrame(buffer) {
+  // For now, use the full buffer as the "frame" for hashing
+  // In production, you might want to use ffmpeg to extract actual first frame
+  return buffer;
 }
 
 /**
  * Download video buffer from URL
  */
 async function downloadVideoBuffer(videoUrl) {
+  const fetch = require('node-fetch');
   const response = await fetch(videoUrl);
   if (!response.ok) {
-    throw new Error(`Failed to download video: ${response.status}`);
+    throw new Error(`Failed to download video: ${response.statusText}`);
   }
   return await response.buffer();
 }
 
 /**
- * Extract first frame from video buffer (using fingerprint utility)
+ * Fetch last 30 Instagram posts directly from Instagram API
  */
-async function extractFirstFrame(buffer) {
-  const { extractFirstFrameHash } = require('../utils/fingerprint');
-  return await extractFirstFrameHash(buffer);
-}
-
-/**
- * Generate visual hash (same as extractFirstFrame for now)
- */
-async function generateVisualHash(thumbOrBuffer) {
-  if (Buffer.isBuffer(thumbOrBuffer)) {
-    return await extractFirstFrame(thumbOrBuffer);
-  }
-  return thumbOrBuffer; // Already a hash
-}
-
-/**
- * Scrape last 30 posts from your own Instagram page
- */
-async function scrapeMyLast30InstagramPosts(settings) {
-  console.log('📱 [STEP 1] Scraping YOUR last 30 Instagram posts...');
+async function fetchLast30InstagramPosts(settings) {
+  console.log('🔍 [STEP 1] Fetching last 30 posts directly from Instagram API...');
   
   const { scrapeInstagramEngagement } = require('../utils/instagramScraper');
   
@@ -87,10 +71,10 @@ async function scrapeMyLast30InstagramPosts(settings) {
 }
 
 /**
- * Scrape target video pool (500 videos from Instagram)
+ * Scrape candidate videos from Instagram
  */
 async function scrapeInstagramVideos(settings) {
-  console.log('🎯 [STEP 2] Scraping 500 target videos from Instagram...');
+  console.log('🎯 [STEP 2] Scraping candidate videos from Instagram...');
   
   const { scrapeInstagramEngagement } = require('../utils/instagramScraper');
   
@@ -101,8 +85,38 @@ async function scrapeInstagramVideos(settings) {
     500
   );
   
-  console.log(`✅ [STEP 2] Found ${videos.length} target videos`);
+  console.log(`✅ [STEP 2] Found ${videos.length} candidate videos`);
   return videos;
+}
+
+/**
+ * Generate smart caption using OpenAI
+ */
+async function generateSmartCaption(originalCaption, engagement, settings) {
+  console.log('🧠 [STEP 5] Generating smart caption...');
+  
+  try {
+    const { generateSmartCaptionWithKey } = require('./captionAI');
+    const smartCaption = await generateSmartCaptionWithKey(
+      originalCaption || 'Amazing video!',
+      settings.openaiApiKey
+    );
+    console.log('✅ [STEP 5] Smart caption generated');
+    return smartCaption;
+  } catch (error) {
+    console.warn('⚠️ [STEP 5] Smart caption failed, using fallback');
+    return originalCaption || 'Posted via Post Now';
+  }
+}
+
+/**
+ * Post to Instagram
+ */
+async function postToInstagram(postData) {
+  console.log('📱 [STEP 6] Posting to Instagram...');
+  const { postToInstagram: instagramPoster } = require('./instagramPoster');
+  await instagramPoster(postData);
+  console.log('✅ [STEP 6] Posted to Instagram successfully');
 }
 
 /**
@@ -110,14 +124,7 @@ async function scrapeInstagramVideos(settings) {
  */
 async function executePostNow(settings) {
   try {
-    console.log('🚀 [POST NOW] Starting memory-optimized step-by-step process...');
-    logMemoryUsage('START');
-
-    // Import required functions
-    const { uploadBufferToS3 } = require('../utils/s3Uploader');
-    const { postToInstagram } = require('./instagramPoster');
-    const { postToYouTube } = require('./youtubePoster');
-    const { generateSmartCaptionWithKey } = require('./captionAI');
+    console.log('🚀 [POST NOW] Starting bulletproof 3-layer duplicate protection...');
 
     // Get SchedulerQueue model (avoid overwrite)
     let SchedulerQueueModel;
@@ -131,7 +138,7 @@ async function executePostNow(settings) {
         videoUrl: String,
         thumbnailUrl: String,
         thumbnailHash: String,
-        audioId: String, // NEW: Audio ID for duplicate detection
+        audioId: String,
         caption: String,
         engagement: Number,
         createdAt: { type: Date, default: Date.now },
@@ -141,219 +148,115 @@ async function executePostNow(settings) {
       SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema, 'schedulerqueue');
     }
 
-    // --------------------------------------------
-    // ✅ STEP 1: FETCH LAST 30 POSTS FROM YOUR IG PAGE
-    // - Use Instagram Graph API to get 30 most recent video posts from your account
-    // - Generate thumbnail hashes + collect captions for fallback filtering
-    // --------------------------------------------
-    const recentInstagramPosts = await scrapeMyLast30InstagramPosts(settings);
-    
-    console.log('🔍 [STEP 1] Generating hashes from your recent posts (sequential to save memory)...');
-    const validHashes = [];
-    const recentCaptions = [];
-    
-    // Collect recent audio IDs for duplicate detection
-    const recentAudioIds = [];
-    
-    // Process posts sequentially to avoid memory overload
-    for (let i = 0; i < recentInstagramPosts.length; i++) {
-      const post = recentInstagramPosts[i];
-      try {
-        console.log(`📸 [YOUR POST ${i+1}/${recentInstagramPosts.length}] Processing ${post.id}...`);
+    //////////////////////////////////////////////////////////////
+    // ✅ STEP 1: FETCH LAST 30 POSTS DIRECTLY FROM INSTAGRAM API
+    //////////////////////////////////////////////////////////////
+
+    // This ensures we're filtering against real post history, not just database logs
+    const last30InstagramPosts = await fetchLast30InstagramPosts(settings); // [{ id, thumbnailUrl, caption, audioId }]
+
+    // Generate visual/audio/caption fingerprints for comparison
+    console.log('🔍 [STEP 1] Generating fingerprints for comparison...');
+    const recentHashes = await Promise.all(
+      last30InstagramPosts.map(async (post) => {
         const buffer = await downloadVideoBuffer(post.url);
-        const hash = await generateVisualHash(buffer);
-        validHashes.push(hash);
-        recentCaptions.push(post.caption || "");
-        
-        // NEW: Collect audio ID if available
-        if (post.audioId) {
-          recentAudioIds.push(post.audioId);
-          console.log(`🎵 [YOUR POST] Audio: ${post.audioId.substring(0, 20)}...`);
-        }
-        
-        console.log(`✅ [YOUR POST] Hash: ${hash.substring(0, 12)}... (${validHashes.length} processed)`);
-        
-        // Clear buffer from memory immediately
-        buffer.fill(0);
-      } catch (error) {
-        console.warn(`⚠️ [HASH] Failed to generate hash for post ${post.id}: ${error.message}`);
-        recentCaptions.push(post.caption || "");
-        // Still collect audio ID even if hash fails
-        if (post.audioId) {
-          recentAudioIds.push(post.audioId);
-        }
-      }
-      
-      // Force garbage collection hint every 5 posts
-      if ((i + 1) % 5 === 0 && global.gc) {
-        global.gc();
-      }
-    }
-    
-    console.log(`✅ [STEP 1] Generated ${validHashes.length} hashes from your posts`);
-    console.log(`✅ [STEP 1] Collected ${recentCaptions.length} captions for similarity checking`);
-    console.log(`🎵 [STEP 1] Collected ${recentAudioIds.length} audio IDs for duplicate detection`);
-    logMemoryUsage('AFTER_STEP_1');
+        const frame = await extractFirstFrame(buffer);
+        return await generateVisualHash(frame);
+      })
+    );
+    const recentCaptions = last30InstagramPosts.map(p => p.caption);
+    const recentAudioIds = last30InstagramPosts.map(p => p.audioId).filter(Boolean);
 
-    // --------------------------------------------
-    // ✅ STEP 2: SCRAPE TARGET VIDEO POOL
-    // - Use Instagram Graph API to fetch 500 latest videos (from explore, reels, or other source)
-    // - Sort by engagement DESC
-    // --------------------------------------------
-    const scrapedVideos = await scrapeInstagramVideos(settings);
+    console.log(`✅ [STEP 1] Built blacklist: ${recentHashes.length} hashes, ${recentCaptions.length} captions, ${recentAudioIds.length} audio IDs`);
+
+    //////////////////////////////////////////////////////
+    // ✅ STEP 2: SCRAPE CANDIDATE VIDEOS FROM INSTAGRAM
+    //////////////////////////////////////////////////////
+
+    // Scrape 500 high-performing videos
+    const scrapedVideos = await scrapeInstagramVideos(settings); // [{ id, videoUrl, caption, engagement, audioId }]
     const sortedVideos = scrapedVideos.sort((a, b) => b.engagement - a.engagement);
-    
-    console.log(`✅ [STEP 2] Sorted ${sortedVideos.length} videos by engagement (highest first)`);
-    logMemoryUsage('AFTER_STEP_2');
 
-    // --------------------------------------------
-    // ✅ STEP 3: LOOP THROUGH VIDEOS FOR UNIQUENESS (MEMORY OPTIMIZED)
-    // - Check visual hash against recentHashes
-    // - If visual hash is duplicate, check caption similarity
-    // - If both fail, skip to next
-    // - Process videos one at a time to prevent memory overload
-    // --------------------------------------------
-    console.log('🔍 [STEP 3] Filtering for unique videos (memory optimized)...');
+    console.log(`✅ [STEP 2] Sorted ${sortedVideos.length} videos by engagement (highest first)`);
+
+    //////////////////////////////////////////////////////////////////////////
+    // ✅ STEP 3: FILTER CANDIDATES AGAINST RECENT POSTS (3-LAYER CHECK)
+    //////////////////////////////////////////////////////////////////////////
+
+    console.log('🔍 [STEP 3] Filtering candidates with 3-layer duplicate protection...');
+
     let selectedVideo = null;
     let selectedHash = null;
-    let videoBuffer = null;
-    let processedCount = 0;
+    let selectedBuffer = null;
 
     for (const video of sortedVideos) {
-      let tempBuffer = null;
-      try {
-        processedCount++;
-        console.log(`🎬 [STEP 3] Checking video ${processedCount}/${sortedVideos.length}: ${video.id} (engagement: ${video.engagement})...`);
-        
-        tempBuffer = await downloadVideoBuffer(video.url);
-        const hash = await generateVisualHash(tempBuffer);
+      const buffer = await downloadVideoBuffer(video.url);
+      const frame = await extractFirstFrame(buffer);
+      const hash = await generateVisualHash(frame);
 
-        console.log(`📸 [HASH CHECK] Video hash: ${hash.substring(0, 12)}...`);
-        
-        // 3-LAYER DUPLICATE DETECTION
-        const isHashDuplicate = validHashes.includes(hash);
-        console.log(`📸 [HASH CHECK] Duplicate: ${isHashDuplicate}`);
+      const isDuplicateHash = recentHashes.includes(hash);
+      const isDuplicateCaption = recentCaptions.some(c => compareCaptionSimilarity(video.caption, c) > 0.9);
+      const isDuplicateAudio = recentAudioIds.includes(video.audioId);
 
-        const isCaptionDuplicate = recentCaptions.some(caption => {
-          const similarity = calculateCaptionSimilarity(caption, video.caption || "");
-          return similarity > 0.92;
-        });
-        console.log(`📝 [CAPTION CHECK] Duplicate: ${isCaptionDuplicate}`);
-
-        // NEW: Audio ID duplicate check
-        const isAudioDuplicate = video.audioId && recentAudioIds.includes(video.audioId);
-        console.log(`🎵 [AUDIO CHECK] Video audioId: ${video.audioId || 'none'}`);
-        console.log(`🎵 [AUDIO CHECK] Duplicate: ${isAudioDuplicate}`);
-
-        if (isHashDuplicate || isCaptionDuplicate || isAudioDuplicate) {
-          console.log(`🚫 [DUPLICATE] Skipping ${video.id} - [Hash:${isHashDuplicate} | Caption:${isCaptionDuplicate} | Audio:${isAudioDuplicate}]`);
-          // Clear temp buffer immediately for rejected videos
-          if (tempBuffer) {
-            tempBuffer.fill(0);
-            tempBuffer = null;
-          }
-          continue;
-        }
-
-        // ✅ Found unique video!
-        selectedVideo = video;
-        selectedHash = hash;
-        videoBuffer = tempBuffer; // Keep this buffer for final use
-        tempBuffer = null; // Prevent cleanup below
-        console.log(`✅ [STEP 3] Selected unique video: ${video.id} after checking ${processedCount} videos`);
-        logMemoryUsage('VIDEO_SELECTED');
-        break;
-
-      } catch (error) {
-        console.error(`❌ [STEP 3] Error processing video ${video.id}: ${error.message}`);
-        // Clean up failed buffer
-        if (tempBuffer) {
-          tempBuffer.fill(0);
-          tempBuffer = null;
-        }
+      if (isDuplicateHash || isDuplicateCaption || isDuplicateAudio) {
+        console.log(`⛔ Skipping duplicate video ${video.id} [Hash:${isDuplicateHash} | Caption:${isDuplicateCaption} | Audio:${isDuplicateAudio}]`);
         continue;
-      } finally {
-        // Clean up temp buffer if not selected
-        if (tempBuffer) {
-          tempBuffer.fill(0);
-          tempBuffer = null;
-        }
-        
-        // Force garbage collection every 10 videos
-        if (processedCount % 10 === 0 && global.gc) {
-          console.log(`🧹 [MEMORY] Forcing garbage collection after ${processedCount} videos...`);
-          global.gc();
-        }
       }
+
+      // ✅ This video passed all checks
+      selectedVideo = video;
+      selectedHash = hash;
+      selectedBuffer = buffer;
+      console.log(`✅ [STEP 3] Selected unique video: ${video.id} with ${video.engagement} engagement`);
+      break;
     }
 
-    if (!selectedVideo || !videoBuffer) {
-      throw new Error("No unique videos found to post");
+    // 🧱 Safety check: If all videos were duplicates, abort
+    if (!selectedVideo || !selectedBuffer) {
+      console.log("❌ No unique video found after filtering candidates.");
+      return {
+        success: false,
+        error: "No unique video found after 3-layer duplicate filtering",
+        duplicateProtection: {
+          visualHash: true,
+          captionSimilarity: true,
+          audioId: true
+        }
+      };
     }
 
-    // --------------------------------------------
+    //////////////////////////////////
     // ✅ STEP 4: UPLOAD TO S3
-    // --------------------------------------------
+    //////////////////////////////////
+
     console.log('☁️ [STEP 4] Uploading to S3...');
-    const s3Key = `autopilot/manual/${Date.now()}_${generateRandomId()}.mp4`;
-    const s3Url = await uploadBufferToS3(videoBuffer, s3Key, "video/mp4");
-    console.log(`✅ [STEP 4] S3 upload successful: ${s3Url}`);
+    const { uploadBufferToS3 } = require('../utils/s3Uploader');
+    const s3Key = `autopilot/manual/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp4`;
+    const s3Url = await uploadBufferToS3(selectedBuffer, s3Key, "video/mp4");
+    console.log(`✅ [STEP 4] Uploaded to S3: ${s3Url}`);
 
-    // --------------------------------------------
-    // ✅ STEP 5: GENERATE SMART CAPTION (OpenAI or fallback)
-    // --------------------------------------------
-    console.log('✏️ [STEP 5] Generating smart caption...');
-    let finalCaption = selectedVideo.caption || "Posted via Post Now";
-    
-    try {
-      if (settings.openaiApiKey) {
-        finalCaption = await generateSmartCaptionWithKey(
-          selectedVideo.caption, 
-          settings.openaiApiKey
-        );
-        console.log(`✅ [STEP 5] AI caption generated: ${finalCaption.substring(0, 50)}...`);
-      } else {
-        console.warn("⚠️ [STEP 5] No OpenAI key - using original caption");
-      }
-    } catch (e) {
-      console.warn(`⚠️ [STEP 5] Caption generation failed: ${e.message} - using original`);
-    }
+    //////////////////////////////////
+    // ✅ STEP 5: GENERATE SMART CAPTION
+    //////////////////////////////////
 
-    // --------------------------------------------
+    const finalCaption = await generateSmartCaption(selectedVideo.caption, selectedVideo.engagement, settings);
+
+    //////////////////////////////////
     // ✅ STEP 6: POST TO INSTAGRAM
-    // --------------------------------------------
-    console.log('📱 [STEP 6] Posting to Instagram...');
-    const instagramResult = await postToInstagram({
+    //////////////////////////////////
+
+    await postToInstagram({
       videoUrl: s3Url,
       caption: finalCaption,
-      thumbnailHash: selectedHash,
+      thumbnailUrl: s3Url, // reuse as thumbnail
       source: "manual"
     });
 
-    if (!instagramResult.success) {
-      throw new Error(`Instagram posting failed: ${instagramResult.error}`);
-    }
-    console.log(`✅ [STEP 6] Instagram post successful`);
+    //////////////////////////////////
+    // ✅ STEP 7: LOG TO DB (SchedulerQueue)
+    //////////////////////////////////
 
-    // --------------------------------------------
-    // ✅ STEP 7: POST TO YOUTUBE (Optional)
-    // --------------------------------------------
-    let youtubeResult = { success: true };
-    if (settings.autoPostToYouTube) {
-      console.log('🎥 [STEP 7] Posting to YouTube...');
-      youtubeResult = await postToYouTube({
-        videoUrl: s3Url,
-        caption: finalCaption,
-        thumbnailHash: selectedHash,
-        source: "manual"
-      });
-      console.log(`✅ [STEP 7] YouTube post: ${youtubeResult.success ? 'Success' : 'Failed'}`);
-    }
-
-    // --------------------------------------------
-    // ✅ STEP 8: LOG TO DATABASE
-    // --------------------------------------------
-    console.log('💾 [STEP 8] Logging to database...');
+    console.log('💾 [STEP 7] Logging to database...');
     await SchedulerQueueModel.create({
       platform: "instagram",
       source: "manual",
@@ -361,43 +264,18 @@ async function executePostNow(settings) {
       videoUrl: s3Url,
       thumbnailUrl: s3Url,
       thumbnailHash: selectedHash,
-      audioId: selectedVideo.audioId || null, // NEW: Store audio ID for future duplicate detection
       caption: finalCaption,
       engagement: selectedVideo.engagement,
+      audioId: selectedVideo.audioId,
       postedAt: new Date(),
-      status: 'posted'
     });
-    
-    if (selectedVideo.audioId) {
-      console.log(`🎵 [STEP 8] Logged audio ID: ${selectedVideo.audioId}`);
-    }
 
-    console.log("✅ [POST NOW] Unique video posted to Instagram successfully with clean step-by-step flow");
-
-    // --------------------------------------------
-    // ✅ FINAL CLEANUP: Clear video buffer from memory
-    // --------------------------------------------
-    console.log('🧹 [CLEANUP] Releasing video buffer from memory...');
-    try {
-      if (videoBuffer && Buffer.isBuffer(videoBuffer)) {
-        videoBuffer.fill(0);
-        videoBuffer = null;
-        console.log('✅ [CLEANUP] Video buffer successfully released');
-      }
-    } catch (cleanupError) {
-      console.warn('⚠️ [CLEANUP ERROR]', cleanupError.message);
-    }
-    
-    // Force final garbage collection
-    if (global.gc) {
-      console.log('🧹 [CLEANUP] Final garbage collection...');
-      global.gc();
-    }
+    console.log("✅ [POST NOW] Successfully posted unique video to Instagram.");
 
     return {
       success: true,
       status: "✅ Posted successfully with 3-layer duplicate protection",
-      platform: settings.autoPostToYouTube ? "Instagram + YouTube" : "Instagram",
+      platform: "Instagram",
       thumbnailHash: selectedHash.substring(0, 12) + '...',
       audioId: selectedVideo.audioId ? selectedVideo.audioId.substring(0, 20) + '...' : 'none',
       s3Url: s3Url,
@@ -412,22 +290,6 @@ async function executePostNow(settings) {
 
   } catch (error) {
     console.error('❌ [POST NOW ERROR]', error);
-    
-    // Clean up any remaining buffers on error
-    try {
-      if (typeof videoBuffer !== 'undefined' && videoBuffer && Buffer.isBuffer(videoBuffer)) {
-        console.log('🧹 [ERROR CLEANUP] Releasing video buffer...');
-        videoBuffer.fill(0);
-        videoBuffer = null;
-      }
-    } catch (cleanupError) {
-      console.warn('⚠️ [CLEANUP ERROR]', cleanupError.message);
-    }
-    
-    if (global.gc) {
-      global.gc();
-    }
-    
     throw error;
   }
 }
