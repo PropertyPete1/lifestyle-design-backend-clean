@@ -44,9 +44,9 @@ const settingsSchema = new mongoose.Schema({
   schedulerType: { type: String, default: 'daily' },
   repostDelay: { type: Number, default: 2 },
   postToYouTube: { type: Boolean, default: false },
-}, { timestamps: true, collection: 'settings' });
+}, { timestamps: true, collection: 'SettingsClean' });
 
-const SettingsModel = mongoose.model('settings', settingsSchema);
+const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
 
 // Scheduler Queue schema for autopilot posts
 const schedulerQueueSchema = new mongoose.Schema({
