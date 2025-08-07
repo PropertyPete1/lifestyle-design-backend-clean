@@ -65,18 +65,25 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     }
     
     // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
-    console.log('📱 [AUTOPILOT] Step 3: Checking your actual Instagram posts (LIVE API v3 - FORCE DEPLOY)...');
-    let last30Posted = await getLast30InstagramPosts(settings);
+    console.log('🔍 [AUTOPILOT] Step 3: Filtering duplicates using visual thumbnail analysis...');
+    // Filter duplicates by thumbnail hash within scraped videos
+    const seenHashes = new Set();
+    const uniqueVideos = [];
     
-    // Fallback: If Instagram API fails, use database method
-    if (last30Posted.length === 0) {
-      console.log('⚠️ [AUTOPILOT] Instagram API returned 0 posts, falling back to database method...');
-      last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos for duplicate thumbnails...`);
+    
+    for (const video of qualifiedVideos) {
+      if (seenHashes.has(video.thumbnailHash)) {
+        console.log(`⏭️ [THUMBNAIL FILTER] Skipping duplicate thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
+        continue;
+      }
+      
+      seenHashes.add(video.thumbnailHash);
+      uniqueVideos.push(video);
+      console.log(`✅ [THUMBNAIL FILTER] Unique thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
     }
     
-    // STEP 4: Filter out duplicates and similar videos
-    console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates...');
-    const uniqueVideos = filterUniqueVideos(qualifiedVideos, last30Posted);
+    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos with unique thumbnails`);
     
     if (uniqueVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No unique videos found');
@@ -353,18 +360,25 @@ async function runInstagramAutoPilot(SettingsModel, SchedulerQueueModel) {
     }
     
     // STEP 3: Get last 30 posted videos from Instagram API to avoid duplicates
-    console.log('📱 [AUTOPILOT] Step 3: Checking your actual Instagram posts (LIVE API v3 - FORCE DEPLOY)...');
-    let last30Posted = await getLast30InstagramPosts(settings);
+    console.log('🔍 [AUTOPILOT] Step 3: Filtering duplicates using visual thumbnail analysis...');
+    // Filter duplicates by thumbnail hash within scraped videos
+    const seenHashes = new Set();
+    const uniqueVideos = [];
     
-    // Fallback: If Instagram API fails, use database method
-    if (last30Posted.length === 0) {
-      console.log('⚠️ [AUTOPILOT] Instagram API returned 0 posts, falling back to database method...');
-      last30Posted = await getLast30PostedVideos('instagram', SchedulerQueueModel);
+    console.log(`🔍 [THUMBNAIL FILTER] Checking ${qualifiedVideos.length} videos for duplicate thumbnails...`);
+    
+    for (const video of qualifiedVideos) {
+      if (seenHashes.has(video.thumbnailHash)) {
+        console.log(`⏭️ [THUMBNAIL FILTER] Skipping duplicate thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
+        continue;
+      }
+      
+      seenHashes.add(video.thumbnailHash);
+      uniqueVideos.push(video);
+      console.log(`✅ [THUMBNAIL FILTER] Unique thumbnail: ${video.id} (hash: ${video.thumbnailHash})`);
     }
     
-    // STEP 4: Filter out duplicates and similar videos
-    console.log('🔍 [AUTOPILOT] Step 4: Filtering duplicates...');
-    const uniqueVideos = filterUniqueVideos(qualifiedVideos, last30Posted);
+    console.log(`✅ [THUMBNAIL FILTER] ${uniqueVideos.length} videos with unique thumbnails`);
     
     if (uniqueVideos.length === 0) {
       console.log('⚠️ [AUTOPILOT] No unique videos found');
