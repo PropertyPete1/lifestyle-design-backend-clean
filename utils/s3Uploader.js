@@ -70,7 +70,9 @@ async function uploadToS3(localPath, s3Key, settings) {
  * @param {Object} settings - Settings with S3 credentials
  * @returns {Promise<string>} Public S3 URL
  */
-async function uploadBufferToS3(buffer, s3Key, contentType = 'video/mp4') {
+async function uploadBufferToS3(buffer, s3Key, settingsOrContentType = 'video/mp4') {
+  // Handle both old signature (buffer, key, settings) and new signature (buffer, key, contentType)
+  const contentType = typeof settingsOrContentType === 'string' ? settingsOrContentType : 'video/mp4';
   try {
     console.log('☁️ [S3 BUFFER UPLOAD] Starting upload:', s3Key);
     
