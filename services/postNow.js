@@ -351,9 +351,14 @@ async function executePostNow(settings) {
     // ✅ FINAL CLEANUP: Clear video buffer from memory
     // --------------------------------------------
     console.log('🧹 [CLEANUP] Releasing video buffer from memory...');
-    if (videoBuffer) {
-      videoBuffer.fill(0);
-      videoBuffer = null;
+    try {
+      if (videoBuffer && Buffer.isBuffer(videoBuffer)) {
+        videoBuffer.fill(0);
+        videoBuffer = null;
+        console.log('✅ [CLEANUP] Video buffer successfully released');
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️ [CLEANUP ERROR]', cleanupError.message);
     }
     
     // Force final garbage collection
@@ -376,10 +381,14 @@ async function executePostNow(settings) {
     console.error('❌ [POST NOW ERROR]', error);
     
     // Clean up any remaining buffers on error
-    if (videoBuffer) {
-      console.log('🧹 [ERROR CLEANUP] Releasing video buffer...');
-      videoBuffer.fill(0);
-      videoBuffer = null;
+    try {
+      if (typeof videoBuffer !== 'undefined' && videoBuffer && Buffer.isBuffer(videoBuffer)) {
+        console.log('🧹 [ERROR CLEANUP] Releasing video buffer...');
+        videoBuffer.fill(0);
+        videoBuffer = null;
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️ [CLEANUP ERROR]', cleanupError.message);
     }
     
     if (global.gc) {
