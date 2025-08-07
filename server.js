@@ -572,5 +572,5 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log('✅ AutoPilot system ready with Instagram API duplicate detection ACTIVE');
+      console.log('✅ AutoPilot system ready with Instagram API duplicate detection ACTIVE [v42]');
 });
