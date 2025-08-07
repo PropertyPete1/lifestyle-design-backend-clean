@@ -198,18 +198,21 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
     console.log(`✅ [POST NOW] Found ${scrapedVideos.length} videos to analyze`);
     
     // STEP 2: Get last 30 Instagram posts with comprehensive data for duplicate prevention
-    const last30IG = await SchedulerQueueModel.find({
+    // Check activitylogs collection where posted videos are actually stored
+    const ActivityLogModel = mongoose.model('ActivityLog', new mongoose.Schema({}, { strict: false }), 'activitylogs');
+    const last30IG = await ActivityLogModel.find({
       platform: 'instagram',
-      status: 'posted'
+      status: 'success'
     })
-    .sort({ postedAt: -1 })
+    .sort({ createdAt: -1 })
     .limit(30)
-    .select('thumbnailHash caption originalVideoId');
+    .select('videoId thumbnailUrl caption');
     
     // 👁️‍🗨️ Collect recent hashes, captions, and video IDs for multi-layer checking
-    const recentHashes = new Set(last30IG.map(v => v.thumbnailHash).filter(hash => hash));
+    // Note: activitylogs uses videoId, thumbnailUrl, caption fields
+    const recentHashes = new Set(); // thumbnailHash not available in activitylogs
     const recentCaptions = new Set(last30IG.map(v => v.caption?.trim().toLowerCase().substring(0, 50)).filter(cap => cap));
-    const recentVideoIds = new Set(last30IG.map(v => v.originalVideoId).filter(id => id));
+    const recentVideoIds = new Set(last30IG.map(v => v.videoId).filter(id => id));
     
     console.log(`🛡️ [POST NOW] Multi-layer duplicate prevention:`);
     console.log(`📊 [DEBUG] Found ${last30IG.length} posted entries in database`);
@@ -253,17 +256,12 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
       const testBuffer = await downloadVideoFromInstagram(video.url);
       const testHash = crypto.createHash('sha256').update(testBuffer).digest('hex').substring(0, 16);
       
-      // Check if this exact video hash exists in recent posts
-      const hashExists = recentHashes.has(video.thumbnailHash) || // Scraper hash
-                        recentVideoIds.has(video.id) ||            // Video ID match
-                        (await SchedulerQueueModel.findOne({       // Exact buffer hash match
-                          platform: 'instagram',
-                          status: 'posted',
-                          thumbnailHash: testHash
-                        }));
+      // Check if this exact video exists in recent posts using videoId and caption
+      const videoExists = recentVideoIds.has(video.id) ||         // Video ID match
+                         recentCaptions.has(video.caption?.trim().toLowerCase().substring(0, 50)); // Caption match
       
-      if (hashExists) {
-        console.log(`⏭️ [POST NOW] Skipping duplicate: ${video.id} (hash: ${testHash})`);
+      if (videoExists) {
+        console.log(`⏭️ [POST NOW] Skipping duplicate video: ${video.id} (already posted)`);
         continue;
       }
       
