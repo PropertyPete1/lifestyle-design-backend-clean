@@ -124,7 +124,8 @@ module.exports = {
   getSmartSchedulerTime,
   getRandomFallbackTime,
   getNextAvailableSlot,
-  getNextFixedLocalSlots
+  getNextFixedLocalSlots,
+  getNextRandomEveningSlots
 };
 
 /**
@@ -155,6 +156,50 @@ function getNextFixedLocalSlots(count, timeZone = 'America/Chicago', hours = [9,
       const minutesTarget = h * 60; // on the hour
       let deltaMinutes = minutesTarget - minutesNow + dayOffset * 24 * 60;
       if (dayOffset === 0 && deltaMinutes <= 0) continue; // today but already passed
+      const when = new Date(now.getTime() + deltaMinutes * 60 * 1000);
+      result.push(when);
+      if (result.length >= count) break;
+    }
+    dayOffset += 1;
+  }
+  return result;
+}
+
+/**
+ * Get next N evening slots (6pm-10pm local) at non-rounded, odd-minute times (e.g., 6:33pm) in a timezone
+ * Ensures future-only times and returns Date objects in UTC corresponding to those local times
+ * @param {number} count
+ * @param {string} timeZone
+ * @param {number[]} hours - Evening hours (default 18..21)
+ */
+function getNextRandomEveningSlots(count, timeZone = 'America/Chicago', hours = [18, 19, 20, 21]) {
+  const now = new Date();
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(now).map(p => [p.type, p.value]));
+  const nowHour = parseInt(parts.hour, 10);
+  const nowMinute = parseInt(parts.minute, 10);
+  const minutesNow = nowHour * 60 + nowMinute;
+
+  // Build allowed minutes: odd minutes, not multiples of 5
+  const allowedMinutes = [];
+  for (let m = 1; m < 60; m += 2) {
+    if (m % 5 !== 0) allowedMinutes.push(m);
+  }
+
+  const result = [];
+  let dayOffset = 0;
+  while (result.length < count && dayOffset < 7) {
+    for (const h of hours) {
+      // Pick a random allowed minute for this slot
+      const minute = allowedMinutes[Math.floor(Math.random() * allowedMinutes.length)];
+      const minutesTarget = h * 60 + minute;
+      let deltaMinutes = minutesTarget - minutesNow + dayOffset * 24 * 60;
+      if (dayOffset === 0 && deltaMinutes <= 0) continue; // skip past times today
       const when = new Date(now.getTime() + deltaMinutes * 60 * 1000);
       result.push(when);
       if (result.length >= count) break;

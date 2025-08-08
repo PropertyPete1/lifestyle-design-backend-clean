@@ -136,12 +136,12 @@ async function runAutopilotOnce() {
   const { uploadUrlToS3, uploadBufferToS3 } = require('../utils/s3Uploader');
   const { generateThumbnailBuffer } = require('../utils/videoThumbnail');
   const { proofreadCaptionWithKey } = require('./captionAI');
-  const { getNextFixedLocalSlots } = require('../utils/smartScheduler');
+  const { getNextRandomEveningSlots } = require('../utils/smartScheduler');
 
   for (const platform of platforms) {
     const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
     const need = Math.max(0, maxPosts - existing);
-    const targetSlots = getNextFixedLocalSlots(need, 'America/Chicago', [9, 13, 18]);
+    const targetSlots = getNextRandomEveningSlots(need, 'America/Chicago', [18,19,20,21]);
     for (let i = 0; i < need; i++) {
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
       if (!candidate) break;
