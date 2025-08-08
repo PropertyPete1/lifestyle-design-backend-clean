@@ -145,6 +145,14 @@ async function executePostNow(settings) {
     // ✅ STEP 2: SCRAPE CANDIDATES, SORT BY ENGAGEMENT, FILTER DOWN  
     //////////////////////////////////////////////////////
 
+    // Ensure we skip anything already queued by Autopilot (avoid collision)
+    let SchedulerQueueModel;
+    try { SchedulerQueueModel = mongoose.model('SchedulerQueue'); } catch(e) {}
+    if (SchedulerQueueModel) {
+      const queued = await SchedulerQueueModel.find({ status: 'pending' }).select('originalVideoId').lean();
+      for (const x of queued) if (x.originalVideoId) blockedIds.add(x.originalVideoId);
+    }
+
     // Fetch candidates WITHOUT computing thumbnail hashes to save memory/CPU
     // Start with own feed, then optionally merge discovery sources to broaden pool
     let candidates = await scrapeInstagramVideos(settings); // [{ id, videoUrl, caption, engagement, audioId, duration }]

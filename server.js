@@ -229,46 +229,21 @@ app.get('/api/autopilot/queue', async (req, res) => {
 // Run autopilot
 app.post('/api/autopilot/run', async (req, res) => {
   try {
-    console.log('🚀 [AUTOPILOT] Starting AutoPilot run...');
-    
-    // Set a shorter timeout to prevent 502 errors
-    const timeout = setTimeout(() => {
-      if (!res.headersSent) {
-        console.log('⏰ [AUTOPILOT] Request timeout - sending early response');
-        res.json({ 
-          success: true, 
-          message: 'AutoPilot started successfully (running in background)',
-          timeout: true
-        });
+    console.log('🚀 [AUTOPILOT] Triggered manual autopilot run');
+    const { runAutopilotOnce } = require('./services/autopilot');
+    // Respond fast; run in background
+    setImmediate(async () => {
+      try {
+        const result = await runAutopilotOnce();
+        console.log('✅ [AUTOPILOT] Completed:', result);
+      } catch (err) {
+        console.error('❌ [AUTOPILOT] Background error:', err.message);
       }
-    }, 25000); // 25 second timeout
-    
-    // Import our clean autopilot module
-    const { runInstagramAutoPilot } = require('./phases/autopilot');
-    
-    // Run the autopilot using our clean module
-    const result = await runInstagramAutoPilot(SettingsModel, SchedulerQueueModel);
-    
-    clearTimeout(timeout);
-    
-    if (!res.headersSent) {
-      if (result.success) {
-        res.json({ 
-          success: true, 
-          message: result.message,
-          processed: result.processed || 0,
-          total: result.total || 0
-        });
-      } else {
-        res.status(400).json({ error: result.message });
-      }
-    }
-
+    });
+    return res.json({ success: true, message: 'Autopilot started (background)' });
   } catch (error) {
     console.error('❌ [AUTOPILOT] Error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'AutoPilot failed to run' });
-    }
+    return res.status(500).json({ error: 'AutoPilot failed to start' });
   }
 });
 
