@@ -110,12 +110,18 @@ async function postToYouTube(options) {
     }
     // Limit tags to 12
     const limitedTags = finalTags.slice(0, 12);
-    const title = pickTitleFromCaption(caption);
+    // Prepend CTA line with arrows for consistency across platforms
+    const ctaLine = '⬅️ Fill out the link in bio for info ➡️';
+    const captionWithCta = caption.toLowerCase().includes('link in bio') || caption.toLowerCase().includes('link in profile')
+      ? (caption.startsWith('⬅️') ? caption : `${ctaLine}\n\n${caption}`)
+      : `${ctaLine}\n\n${caption}`;
+
+    const title = pickTitleFromCaption(captionWithCta);
     // Keep original caption; just append hashtags if not already present
-    const existingHashtags = extractHashtags(caption);
+    const existingHashtags = extractHashtags(captionWithCta);
     const extra = limitedTags.filter(t => !existingHashtags.includes(t));
     const hashtagsLine = extra.length ? extra.map(t => `#${t}`).join(' ') : '';
-    const description = (hashtagsLine ? `${caption}\n\n${hashtagsLine}` : caption).slice(0, 4900);
+    const description = (hashtagsLine ? `${captionWithCta}\n\n${hashtagsLine}` : captionWithCta).slice(0, 4900);
 
     // Use Resumable upload to avoid multipart issues
     const initMetadata = {
