@@ -248,7 +248,10 @@ app.get('/api/autopilot/queue', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     console.log('📋 [AUTOPILOT QUEUE] Fetching real queue data from SchedulerQueueModel...');
     
-    const queueItems = await SchedulerQueueModel.find({})
+    // Only show upcoming items in the Smart Queue (hide posted/failed/completed)
+    const queueItems = await SchedulerQueueModel.find({
+      status: { $in: ['scheduled', 'pending', 'processing'] }
+    })
       .sort({ scheduledTime: 1 })
       .limit(50);
     
