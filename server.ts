@@ -257,9 +257,11 @@ try {
   const settingsRoute = require('./src/routes/settings').default;
   const scraperRoute = require('./src/routes/scraper').default;
   const messageRoute = require('./src/routes/message').default;
+  const logsRoute = require('./src/routes/logs').default;
   app.use('/api/settings', settingsRoute);
   app.use('/api/scraper', scraperRoute);
   app.use('/api/message', messageRoute);
+  app.use('/api/logs', logsRoute);
   console.log('✅ Zillow Assistant routes registered');
 } catch (e) {
   console.warn('⚠️ Failed to register Zillow Assistant routes', e?.message || e);

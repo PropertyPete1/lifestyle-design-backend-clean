@@ -109,9 +109,11 @@ try {
   const zScraper = require('./src/routes/scraper').default;
   const zMessage = require('./src/routes/message').default;
   const zSettings = require('./src/routes/settings').default;
+  const zLogs = require('./src/routes/logs').default;
   app.use('/api/scraper', zScraper);
   app.use('/api/message', zMessage);
   app.use('/api/zillow/settings', zSettings); // avoid collision with existing /api/settings
+  app.use('/api/logs', zLogs);
   console.log('✅ Zillow Assistant routes mounted: /api/scraper, /api/message, /api/zillow/settings');
 } catch (e) {
   console.warn('⚠️ Failed to mount Zillow Assistant routes:', e?.message || e);
