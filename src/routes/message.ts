@@ -3,6 +3,7 @@ import { ZillowSettingsModel } from '../models/settingsModel';
 import { sendMessageToListing } from '../services/zillowMessenger';
 import { MessageLogModel } from '../models/messageLog';
 import { appendLogsToSheet } from '../services/googleSheets';
+import { ZillowListingModel } from '../models/zillowListing';
 
 const router = Router();
 
@@ -50,7 +51,15 @@ router.post('/send-batch', async (req, res) => {
       return res.status(429).json({ error: 'Daily message limit reached' });
     }
 
-    const toSend = (listings as any[])
+    let toSend: any[] = listings as any[];
+    if (!toSend || toSend.length === 0) {
+      const match: any = { flagged: { $ne: true } };
+      if (propertyType && propertyType !== 'both') match.type = propertyType;
+      const recent = await ZillowListingModel.find(match).sort({ createdAt: -1 }).limit(maxMessages);
+      toSend = recent.map(r => ({ address: r.address, link: r.link, ownerName: r.ownerName, type: r.type }));
+    }
+
+    toSend = toSend
       .filter(l => (propertyType === 'both' || !propertyType) ? true : l.type === propertyType)
       .slice(0, Math.min(remaining, maxMessages));
 

@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer';
 import { scanRedFlags } from './redFlagScanner';
+import { ZillowListingModel } from '../models/zillowListing';
 
 export type ScrapeInput = {
   propertyType: 'rent' | 'sale' | 'both';
@@ -74,12 +75,22 @@ export async function scrapeZillowDuckDuckGo(input: ScrapeInput): Promise<Listin
           type,
         };
 
+        let flagged = false; let flagReason: string | undefined;
         if (input.redFlagDetection) {
           const scan = scanRedFlags(link.text || '');
-          if (scan.flagged) continue;
+          if (scan.flagged) { flagged = true; flagReason = scan.reason; }
         }
 
         results.push(listing);
+
+        // Persist listing for later batch send (skip dup errors)
+        try {
+          await ZillowListingModel.updateOne(
+            { link: listing.link },
+            { $setOnInsert: { ...listing }, $set: { flagged, flagReason } },
+            { upsert: true }
+          );
+        } catch {}
       }
     }
   } finally {
