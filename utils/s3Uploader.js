@@ -3,7 +3,8 @@
  * Replaces old ngrok temporary file hosting
  */
 
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { Upload } = require('@aws-sdk/lib-storage');
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
@@ -14,12 +15,6 @@ const configureAWS = (settings) => {
     throw new Error('Missing S3 credentials: accessKey, secretKey, and bucketName are required');
   }
 
-  AWS.config.update({
-    accessKeyId: settings.s3AccessKey,
-    secretAccessKey: settings.s3SecretKey,
-    region: settings.s3Region || 'us-east-1',
-  });
-  
   console.log('✅ [AWS CONFIG] Configured with region:', settings.s3Region || 'us-east-1');
 };
 
@@ -34,14 +29,14 @@ async function uploadToS3(localPath, s3Key, settings) {
   try {
     console.log('☁️ [S3 UPLOAD] Starting upload:', s3Key);
     
-    // Configure AWS with user's credentials
+    // Configure client with user's credentials
     configureAWS(settings);
-    
-    // Create S3 instance with configured credentials
-    const s3Instance = new AWS.S3({
-      accessKeyId: settings.s3AccessKey,
-      secretAccessKey: settings.s3SecretKey,
-      region: settings.s3Region || 'us-east-1'
+    const s3Client = new S3Client({
+      region: settings.s3Region || 'us-east-1',
+      credentials: {
+        accessKeyId: settings.s3AccessKey,
+        secretAccessKey: settings.s3SecretKey,
+      },
     });
     
     const fileContent = fs.readFileSync(localPath);
@@ -52,8 +47,9 @@ async function uploadToS3(localPath, s3Key, settings) {
       ContentType: 'video/mp4',
     };
 
-    const result = await s3Instance.upload(params).promise();
-    const publicUrl = result.Location || `https://${settings.s3BucketName}.s3.${settings.s3Region || 'us-east-1'}.amazonaws.com/${s3Key}`;
+    const uploader = new Upload({ client: s3Client, params });
+    const result = await uploader.done();
+    const publicUrl = `https://${settings.s3BucketName}.s3.${settings.s3Region || 'us-east-1'}.amazonaws.com/${s3Key}`;
     
     console.log('✅ [S3 UPLOAD] Success:', publicUrl);
     return publicUrl;
@@ -78,10 +74,12 @@ async function uploadBufferToS3(buffer, s3Key, settingsOrContentType = 'video/mp
     console.log('☁️ [S3 BUFFER UPLOAD] Starting upload:', s3Key);
     
     // Use environment variables directly (bulletproof approach)
-    const s3Instance = new AWS.S3({
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      region: process.env.AWS_REGION || 'us-east-1'
+    const s3Client = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
     });
     
     const params = {
@@ -92,9 +90,11 @@ async function uploadBufferToS3(buffer, s3Key, settingsOrContentType = 'video/mp
       // Removed ACL: 'public-read' - ACLs disabled on bucket
     };
 
-    const result = await s3Instance.upload(params).promise();
-    console.log('✅ [S3 BUFFER UPLOAD] Success:', result.Location);
-    return result.Location;
+    const uploader = new Upload({ client: s3Client, params });
+    const result = await uploader.done();
+    const publicUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`;
+    console.log('✅ [S3 BUFFER UPLOAD] Success:', publicUrl);
+    return publicUrl;
     
   } catch (error) {
     console.error('❌ [S3 BUFFER UPLOAD ERROR]', error);
@@ -136,10 +136,12 @@ async function uploadUrlToS3(fileUrl, s3Key, contentType = 'video/mp4') {
       throw new Error(`Failed to fetch remote file: ${response.status}`);
     }
 
-    const s3Instance = new AWS.S3({
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      region: process.env.AWS_REGION || 'us-east-1'
+    const s3Client = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
     });
 
     const params = {
@@ -149,9 +151,11 @@ async function uploadUrlToS3(fileUrl, s3Key, contentType = 'video/mp4') {
       ContentType: contentType,
     };
 
-    const result = await s3Instance.upload(params).promise();
-    console.log('✅ [S3 STREAM UPLOAD] Success:', result.Location);
-    return result.Location;
+    const uploader = new Upload({ client: s3Client, params });
+    const result = await uploader.done();
+    const publicUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`;
+    console.log('✅ [S3 STREAM UPLOAD] Success:', publicUrl);
+    return publicUrl;
   } catch (error) {
     console.error('❌ [S3 STREAM UPLOAD ERROR]', error);
     throw new Error(`S3 stream upload failed: ${error.message}`);

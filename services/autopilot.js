@@ -125,7 +125,7 @@ async function runAutopilotOnce() {
   const since = new Date(Date.now() - repostDelayDays*24*60*60*1000);
   const recentPosted = await ActivityLogModel.find({ platform: 'instagram', status: 'success', createdAt: { $gte: since } }).select('originalVideoId').lean();
   for (const x of recentPosted) if (x.originalVideoId) blockedIds.add(x.originalVideoId);
-  const pending = await SchedulerQueueModel.find({ status: 'pending' }).select('originalVideoId').lean();
+  const pending = await SchedulerQueueModel.find({ status: { $in: ['pending','scheduled'] } }).select('originalVideoId').lean();
   for (const x of pending) if (x.originalVideoId) blockedIds.add(x.originalVideoId);
 
   // Count current pending per platform for next 24h
@@ -138,7 +138,7 @@ async function runAutopilotOnce() {
   const { proofreadCaptionWithKey } = require('./captionAI');
 
   for (const platform of platforms) {
-    const existing = await SchedulerQueueModel.countDocuments({ platform, status: 'pending', scheduledTime: { $gte: now, $lte: tomorrow } });
+    const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
     const need = Math.max(0, maxPosts - existing);
     for (let i = 0; i < need; i++) {
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
@@ -175,7 +175,7 @@ async function runAutopilotOnce() {
           platform: pf,
           caption: finalCaption,
           scheduledTime,
-          status: 'pending',
+          status: 'scheduled',
           source: 'autopilot',
           videoUrl: s3Url,
           s3Url,

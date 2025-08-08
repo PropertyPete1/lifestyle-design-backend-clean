@@ -64,8 +64,8 @@ const schedulerQueueSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'posted', 'failed', 'completed'],
-    default: 'pending'
+    enum: ['pending', 'scheduled', 'processing', 'posted', 'failed', 'completed'],
+    default: 'scheduled'
   },
   source: {
     type: String,
@@ -88,6 +88,14 @@ const schedulerQueueSchema = new mongoose.Schema({
 const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
 
 // API Routes
+
+// Start cron scheduler (America/Chicago)
+try {
+  const { startCronScheduler } = require('./services/cronScheduler');
+  startCronScheduler(SchedulerQueueModel, SettingsModel);
+} catch (e) {
+  console.warn('⚠️ Failed to start cron scheduler:', e.message);
+}
 
 // Autopilot status
 app.get('/api/autopilot/status', async (req, res) => {
@@ -206,10 +214,11 @@ app.get('/api/autopilot/queue', async (req, res) => {
       platform: item.platform,
       caption: item.caption || 'Generated caption',
       scheduledTime: item.scheduledTime,
+      scheduledTimeLocal: item.scheduledTime ? new Date(item.scheduledTime).toLocaleString('en-US', { timeZone: 'America/Chicago' }) : null,
       status: item.status,
       source: item.source || 'autopilot',
-    videoUrl: item.videoUrl || item.s3Url,
-    thumbnailUrl: item.thumbnailUrl || item.s3Url,
+      videoUrl: item.videoUrl || item.s3Url,
+      thumbnailUrl: item.thumbnailUrl || item.s3Url,
       engagement: item.engagement || 0,
       originalVideoId: item.originalVideoId
     }));
