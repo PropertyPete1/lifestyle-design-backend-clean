@@ -301,30 +301,53 @@ app.post('/api/settings', async (req, res) => {
   }
 });
 
-// Analytics endpoint
+// Analytics endpoint (real data)
 app.get('/api/analytics', async (req, res) => {
   try {
     const settings = await SettingsModel.findOne();
-    res.json({
-      instagram: { 
-        followers: 0, 
-        reach: 0, 
-        engagementRate: 0, 
-        autopilotEnabled: settings?.autopilotEnabled || false 
-      },
-      youtube: { 
-        subscribers: 0, 
-        reach: 0, 
-        autopilotEnabled: settings?.autopilotEnabled || false 
-      },
-      totalPosts: 0,
-      avgEngagement: 0
-    });
+    if (!settings) {
+      return res.json({
+        instagram: { followers: 0, reach: 0, engagementRate: 0, autopilotEnabled: false },
+        youtube: { subscribers: 0, reach: 0, autopilotEnabled: false },
+      });
+    }
+
+    let instagram = { followers: 0, reach: 0, engagementRate: 0, autopilotEnabled: !!settings.autopilotEnabled };
+    let youtube = { subscribers: 0, reach: 0, autopilotEnabled: !!settings.autopilotEnabled };
+
+    try {
+      const { getInstagramAnalytics } = require('./services/instagramAnalytics');
+      const ig = await getInstagramAnalytics(SettingsModel);
+      instagram = {
+        followers: ig.followers || 0,
+        reach: ig.reach || 0,
+        engagementRate: (typeof ig.engagement === 'number') ? (ig.engagement / 100) : (ig.engagementRate || 0),
+        autopilotEnabled: !!settings.autopilotEnabled,
+      };
+    } catch (e) {
+      console.warn('⚠️ [ANALYTICS] Instagram fetch failed:', e.message);
+    }
+
+    try {
+      const { getYouTubeAnalytics } = require('./services/youtubeAnalytics');
+      const yt = await getYouTubeAnalytics(SettingsModel);
+      youtube = {
+        subscribers: yt.subscribers || 0,
+        reach: yt.views || 0,
+        autopilotEnabled: !!settings.autopilotEnabled,
+      };
+    } catch (e) {
+      console.warn('⚠️ [ANALYTICS] YouTube fetch failed:', e.message);
+    }
+
+    res.json({ instagram, youtube });
   } catch (error) {
     console.error('❌ [ANALYTICS] Error:', error);
     res.status(500).json({ error: 'Failed to get analytics' });
   }
 });
+
+// (uploads endpoints intentionally not added here to preserve production backend contract)
 
 // Missing API endpoints that frontend is calling
 app.get('/api/chart/status', (req, res) => {
