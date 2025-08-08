@@ -116,7 +116,8 @@ function generateS3Key(platform) {
 module.exports = {
   uploadToS3,
   uploadBufferToS3,
-  generateS3Key
+  generateS3Key,
+  uploadUrlToS3
 };
 
 /**

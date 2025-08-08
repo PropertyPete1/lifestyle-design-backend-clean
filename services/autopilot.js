@@ -133,7 +133,8 @@ async function runAutopilotOnce() {
   const tomorrow = new Date(now.getTime() + 24*60*60*1000);
 
   let totalEnqueued = 0;
-  const { uploadUrlToS3 } = require('../utils/s3Uploader');
+  const { uploadUrlToS3, uploadBufferToS3 } = require('../utils/s3Uploader');
+  const { generateThumbnailBuffer } = require('../utils/videoThumbnail');
   const { proofreadCaptionWithKey } = require('./captionAI');
 
   for (const platform of platforms) {
@@ -143,9 +144,23 @@ async function runAutopilotOnce() {
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
       if (!candidate) break;
 
-      // Upload once
+      // Upload once (video)
       const s3Key = `autopilot/queue/${Date.now()}_${Math.random().toString(36).slice(2,8)}.mp4`;
       const s3Url = await uploadUrlToS3(candidate.url, s3Key, 'video/mp4');
+
+      // Upload thumbnail (image) for UI preview when available
+      let s3ThumbUrl = null;
+      try {
+        // Prefer IG thumbnail if available; otherwise capture from video
+        if (candidate.thumbnailUrl) {
+          const thumbKey = `autopilot/queue-thumbs/${Date.now()}_${Math.random().toString(36).slice(2,8)}.jpg`;
+          s3ThumbUrl = await uploadUrlToS3(candidate.thumbnailUrl, thumbKey, 'image/jpeg');
+        } else {
+          const thumbBuf = await generateThumbnailBuffer(candidate.url);
+          const thumbKey = `autopilot/queue-thumbs/${Date.now()}_${Math.random().toString(36).slice(2,8)}.jpg`;
+          s3ThumbUrl = await uploadBufferToS3(thumbBuf, thumbKey, 'image/jpeg');
+        }
+      } catch (_) {}
 
       // Caption: proofread + top CTA arrows
       const ctaLine = '⬆️ Fill out the link in bio for info ⬆️';
@@ -164,7 +179,7 @@ async function runAutopilotOnce() {
           source: 'autopilot',
           videoUrl: s3Url,
           s3Url,
-          thumbnailUrl: candidate.thumbnailUrl || undefined,
+          thumbnailUrl: s3ThumbUrl || candidate.thumbnailUrl || undefined,
           engagement: candidate.engagement,
           originalVideoId: candidate.id
         });
