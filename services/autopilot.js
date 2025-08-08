@@ -164,6 +164,7 @@ async function runAutopilotOnce() {
           source: 'autopilot',
           videoUrl: s3Url,
           s3Url,
+          thumbnailUrl: candidate.thumbnailUrl || undefined,
           engagement: candidate.engagement,
           originalVideoId: candidate.id
         });

@@ -194,6 +194,7 @@ app.post('/api/autopilot/manual-post', async (req, res) => {
 // Get autopilot queue
 app.get('/api/autopilot/queue', async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     console.log('📋 [AUTOPILOT QUEUE] Fetching real queue data from SchedulerQueueModel...');
     
     const queueItems = await SchedulerQueueModel.find({})
@@ -207,8 +208,8 @@ app.get('/api/autopilot/queue', async (req, res) => {
       scheduledTime: item.scheduledTime,
       status: item.status,
       source: item.source || 'autopilot',
-      videoUrl: item.videoUrl || item.s3Url,
-      thumbnailUrl: item.thumbnailUrl || item.s3Url,
+    videoUrl: item.videoUrl || item.s3Url,
+    thumbnailUrl: item.thumbnailUrl || item.s3Url,
       engagement: item.engagement || 0,
       originalVideoId: item.originalVideoId
     }));

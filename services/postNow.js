@@ -341,7 +341,7 @@ async function executePostNow(settings) {
       source: "manual",
       originalVideoId: selectedVideo.id,
       videoUrl: s3Url,
-      thumbnailUrl: s3Url,
+      thumbnailUrl: selectedVideo.thumbnailUrl || s3Url,
       thumbnailHash: selectedHash,
       caption: finalCaption,
       engagement: selectedVideo.engagement,
