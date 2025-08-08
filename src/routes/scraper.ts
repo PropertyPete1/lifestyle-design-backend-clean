@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { scrapeZillowDuckDuckGo } from '../services/zillowScraper';
 import { ZillowSettingsModel } from '../models/settingsModel';
+import { ZillowListingModel } from '../models/zillowListing';
 
 const router = Router();
 
@@ -21,5 +22,18 @@ router.post('/run', async (req, res) => {
 });
 
 export default router;
+
+// List recent scraped listings
+router.get('/listings', async (req, res) => {
+  try {
+    const { propertyType } = req.query as { propertyType?: string };
+    const match: any = {};
+    if (propertyType && propertyType !== 'both') match.type = propertyType;
+    const listings = await ZillowListingModel.find(match).sort({ createdAt: -1 }).limit(100);
+    res.json({ count: listings.length, listings });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to list scraped listings', message: err?.message || 'unknown' });
+  }
+});
 
 
