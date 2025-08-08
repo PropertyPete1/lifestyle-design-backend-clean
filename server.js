@@ -97,6 +97,18 @@ try {
   console.warn('⚠️ Failed to start cron scheduler:', e.message);
 }
 
+// One-time migration: normalize legacy statuses to 'scheduled'
+(async () => {
+  try {
+    const result = await SchedulerQueueModel.updateMany({ status: 'pending' }, { status: 'scheduled' });
+    if (result.modifiedCount) {
+      console.log(`🛠️ [MIGRATION] Updated ${result.modifiedCount} legacy pending items to scheduled`);
+    }
+  } catch (mErr) {
+    console.warn('⚠️ [MIGRATION] Could not normalize legacy statuses:', mErr.message);
+  }
+})();
+
 // Autopilot status
 app.get('/api/autopilot/status', async (req, res) => {
   try {
