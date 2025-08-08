@@ -275,14 +275,14 @@ async function executePostNow(settings) {
       (settings && settings.openaiApiKey) ? settings.openaiApiKey : null
     );
     const ctaRegex = /(link in bio|link in profile)/i;
-    const ctaLine = '⬅️ Fill out the link in bio for info ➡️';
+    const ctaLine = '⬆️ Fill out the link in bio for info ⬆️';
     const lines = (proofread || '').split('\n');
     let idx = 0;
     while (idx < lines.length && lines[idx].trim() === '') idx++;
     const firstLine = lines[idx] || '';
     if (ctaRegex.test(firstLine)) {
-      // Ensure arrows on the first non-empty line
-      lines[idx] = `⬅️ ${firstLine.trim()} ➡️`;
+      // Ensure up arrows on the first non-empty line
+      lines[idx] = `⬆️ ${firstLine.trim()} ⬆️`;
       finalCaption = lines.join('\n');
     } else if (ctaRegex.test(proofread || '')) {
       // CTA exists somewhere else; still add a top CTA with arrows

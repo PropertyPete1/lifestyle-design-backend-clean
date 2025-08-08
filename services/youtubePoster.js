@@ -111,7 +111,7 @@ async function postToYouTube(options) {
     // Limit tags to 12
     const limitedTags = finalTags.slice(0, 12);
     // Prepend CTA line with arrows for consistency across platforms
-    const ctaLine = '⬅️ Fill out the link in bio for info ➡️';
+    const ctaLine = '⬆️ Fill out the link in bio for info ⬆️';
     const captionWithCta = caption.toLowerCase().includes('link in bio') || caption.toLowerCase().includes('link in profile')
       ? (caption.startsWith('⬅️') ? caption : `${ctaLine}\n\n${caption}`)
       : `${ctaLine}\n\n${caption}`;
