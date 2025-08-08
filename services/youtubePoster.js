@@ -193,7 +193,37 @@ async function postToYouTube(options) {
     }
     
     console.log('✅ [YOUTUBE] Video uploaded successfully:', uploadData.id);
-    // No custom thumbnail for now – rely on first-frame. Optionally, we can upload a generated thumbnail later.
+
+    // Upload custom thumbnail using first frame (0s)
+    try {
+      const { generateThumbnailBuffer } = require('../utils/videoThumbnail');
+      const thumbBuffer = await generateThumbnailBuffer(videoUrl, 0.0);
+      const boundary = '-------thumb-' + Math.random().toString(36).slice(2);
+      const multipartBody = Buffer.concat([
+        Buffer.from(`--${boundary}\r\n` +
+                    'Content-Disposition: form-data; name="media"; filename="thumb.jpg"\r\n' +
+                    'Content-Type: image/jpeg\r\n\r\n'),
+        thumbBuffer,
+        Buffer.from(`\r\n--${boundary}--\r\n`)
+      ]);
+      const thumbResp = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${uploadData.id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${freshAccessToken}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': String(multipartBody.length)
+        },
+        body: multipartBody
+      });
+      if (!thumbResp.ok) {
+        const tt = await thumbResp.text();
+        console.log('⚠️ [YOUTUBE] Thumbnail upload failed:', tt.slice(0, 200));
+      } else {
+        console.log('🖼️ [YOUTUBE] Custom thumbnail set from first frame');
+      }
+    } catch (thumbErr) {
+      console.log('⚠️ [YOUTUBE] Could not set custom thumbnail:', thumbErr.message);
+    }
     
     return {
       success: true,
