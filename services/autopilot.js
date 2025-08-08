@@ -96,7 +96,9 @@ async function runAutopilotOnce() {
   }
 
   // Platforms
-  const platforms = settings.postToYouTube ? ['instagram','youtube'] : ['instagram'];
+  const platforms = (settings.postToInstagram === false && settings.postToYouTube)
+    ? ['youtube']
+    : (settings.postToYouTube ? ['instagram','youtube'] : ['instagram']);
   const maxPosts = Number(settings.maxPosts || 5);
   const repostDelayDays = Number(settings.repostDelay || 30);
 

@@ -44,6 +44,7 @@ const settingsSchema = new mongoose.Schema({
   schedulerType: { type: String, default: 'daily' },
   repostDelay: { type: Number, default: 2 },
   postToYouTube: { type: Boolean, default: false },
+  postToInstagram: { type: Boolean, default: true },
 }, { timestamps: true, collection: 'SettingsClean' });
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
