@@ -123,5 +123,43 @@ async function getNextAvailableSlot(platform, existingPosts = []) {
 module.exports = {
   getSmartSchedulerTime,
   getRandomFallbackTime,
-  getNextAvailableSlot
+  getNextAvailableSlot,
+  getNextFixedLocalSlots
 };
+
+/**
+ * Get the next N slots at exact local times in a given timezone (e.g., 9:00, 13:00, 18:00 America/Chicago)
+ * Returns absolute Date objects by adding the CT minute delta to current UTC time.
+ * @param {number} count - Number of slots to return
+ * @param {string} timeZone - IANA TZ name (default America/Chicago)
+ * @param {number[]} hours - Hours in 24h local time (default [9,13,18])
+ * @returns {Date[]} Array of Date objects in UTC that correspond to those local times
+ */
+function getNextFixedLocalSlots(count, timeZone = 'America/Chicago', hours = [9, 13, 18]) {
+  const now = new Date();
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(now).map(p => [p.type, p.value]));
+  const nowHour = parseInt(parts.hour, 10);
+  const nowMinute = parseInt(parts.minute, 10);
+  const minutesNow = nowHour * 60 + nowMinute;
+
+  const result = [];
+  let dayOffset = 0;
+  while (result.length < count && dayOffset < 7) {
+    for (const h of hours) {
+      const minutesTarget = h * 60; // on the hour
+      let deltaMinutes = minutesTarget - minutesNow + dayOffset * 24 * 60;
+      if (dayOffset === 0 && deltaMinutes <= 0) continue; // today but already passed
+      const when = new Date(now.getTime() + deltaMinutes * 60 * 1000);
+      result.push(when);
+      if (result.length >= count) break;
+    }
+    dayOffset += 1;
+  }
+  return result;
+}

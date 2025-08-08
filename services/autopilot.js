@@ -136,10 +136,12 @@ async function runAutopilotOnce() {
   const { uploadUrlToS3, uploadBufferToS3 } = require('../utils/s3Uploader');
   const { generateThumbnailBuffer } = require('../utils/videoThumbnail');
   const { proofreadCaptionWithKey } = require('./captionAI');
+  const { getNextFixedLocalSlots } = require('../utils/smartScheduler');
 
   for (const platform of platforms) {
     const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
     const need = Math.max(0, maxPosts - existing);
+    const targetSlots = getNextFixedLocalSlots(need, 'America/Chicago', [9, 13, 18]);
     for (let i = 0; i < need; i++) {
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
       if (!candidate) break;
@@ -167,8 +169,8 @@ async function runAutopilotOnce() {
       const proof = await proofreadCaptionWithKey(candidate.caption || '', settings.openaiApiKey || null);
       const finalCaption = `${ctaLine}\n\n${proof || ''}`.trim();
 
-      // Schedule time: spread within next 24h roughly evenly after now
-      const scheduledTime = new Date(now.getTime() + (existing + i) * (Math.floor(24/maxPosts) || 1) * 60*60*1000);
+      // Schedule time: use fixed Austin local slots (9am, 1pm, 6pm CT)
+      const scheduledTime = targetSlots[i] || new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
 
       for (const pf of platforms) {
         await SchedulerQueueModel.create({
