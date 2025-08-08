@@ -252,37 +252,18 @@ app.get('/api/events/recent', async (req, res) => {
   }
 });
 
-// Settings Routes
-app.get('/api/settings', async (req, res) => {
-  try {
-    const settings = await SettingsModel.findOne();
-    if (!settings) {
-      return res.json({}); // Return empty object instead of 404
-    }
-    res.json(settings);
-  } catch (err) {
-    console.error('[❌ SETTINGS FETCH ERROR]', err);
-    res.status(500).json({ error: 'Failed to load settings' });
-  }
-});
-
-app.post('/api/settings', async (req, res) => {
-  try {
-    const incoming = req.body;
-    let settings = await SettingsModel.findOne();
-    if (settings) {
-      Object.assign(settings, incoming);
-    } else {
-      settings = new SettingsModel(incoming);
-    }
-    await settings.save();
-    console.log('[✅ SETTINGS SAVED]', Object.keys(incoming));
-    res.status(200).json({ message: 'Settings saved', settings });
-  } catch (err) {
-    console.error('[❌ SETTINGS SAVE ERROR]', err);
-    res.status(500).json({ error: 'Failed to save settings' });
-  }
-});
+// Zillow Assistant routes
+try {
+  const settingsRoute = require('./src/routes/settings').default;
+  const scraperRoute = require('./src/routes/scraper').default;
+  const messageRoute = require('./src/routes/message').default;
+  app.use('/api/settings', settingsRoute);
+  app.use('/api/scraper', scraperRoute);
+  app.use('/api/message', messageRoute);
+  console.log('✅ Zillow Assistant routes registered');
+} catch (e) {
+  console.warn('⚠️ Failed to register Zillow Assistant routes', e?.message || e);
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
