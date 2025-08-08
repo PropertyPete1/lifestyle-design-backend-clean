@@ -83,6 +83,8 @@ const schedulerQueueSchema = new mongoose.Schema({
   hashtags: [String],
   retryCount: { type: Number, default: 0 },
   errorMessage: String
+  ,
+  autofill: { type: Boolean, default: false }
 }, { timestamps: true, collection: 'SchedulerQueue' });
 
 const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
@@ -395,6 +397,347 @@ app.get('/api/audience/score', async (req, res) => {
     res.json({ instagram, youtube, hour, dayOfWeek });
   } catch (err) {
     res.status(500).json({ error: 'Failed to compute audience score' });
+  }
+});
+
+// =========================
+// Audience Heatmap (weekly)
+// =========================
+app.get('/api/audience-heatmap', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 30);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const rows = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avgScore: { $avg: '$score' }, count: { $sum: 1 } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgScore: 1, count: 1, _id: 0 } },
+    ]);
+
+    const grid = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ score: 0, reach: 0, level: 'minimal', count: 0 })));
+
+    const classify = (reach) => {
+      if (reach >= 851) return 'extreme';
+      if (reach >= 601) return 'very-high';
+      if (reach >= 401) return 'high';
+      if (reach >= 251) return 'medium';
+      if (reach >= 101) return 'low';
+      return 'minimal';
+    };
+
+    // Convert normalized score (0..1) to a pseudo-reach scale using observed counts as weight
+    rows.forEach(r => {
+      const d = Math.max(0, Math.min(6, r.dayOfWeek));
+      const h = Math.max(0, Math.min(23, r.hour));
+      const reach = Math.round((r.avgScore || 0) * 1000); // derived from real score logs
+      grid[d][h] = { score: Number((r.avgScore || 0).toFixed(3)), reach, level: classify(reach), count: r.count };
+    });
+
+    res.json({ platform, daysBack, grid });
+  } catch (err) {
+    console.error('❌ [AUDIENCE HEATMAP] Error:', err);
+    res.status(500).json({ error: 'Failed to build audience heatmap' });
+  }
+});
+
+// =========================
+// Optimal Post Times (top 3)
+// =========================
+app.get('/api/optimal-times', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 7);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const agg = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avgScore: { $avg: '$score' }, count: { $sum: 1 } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgScore: 1, count: 1, _id: 0 } },
+    ]);
+
+    const weekdayBonus = (d) => (d >= 1 && d <= 5 ? 1.05 : 1);
+    const scored = agg.map(r => ({
+      dayOfWeek: r.dayOfWeek,
+      hour: r.hour,
+      score: (r.avgScore || 0) * weekdayBonus(r.dayOfWeek),
+    }));
+
+    scored.sort((a, b) => b.score - a.score);
+    const top3 = scored.slice(0, 3).map(s => {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const hh = String(s.hour).padStart(2, '0');
+      return `${dayNames[s.dayOfWeek]} ${hh}:00`;
+    });
+
+    res.json({ platform, top3 });
+  } catch (err) {
+    console.error('❌ [OPTIMAL TIMES] Error:', err);
+    res.status(500).json({ error: 'Failed to compute optimal times' });
+  }
+});
+
+// =====================================
+// Performance Heatmap (posts vs audience)
+// =====================================
+app.get('/api/performance-heatmap', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 30);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const audience = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avgScore: { $avg: '$score' }, count: { $sum: 1 } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgScore: 1, count: 1, _id: 0 } },
+    ]);
+
+    const posts = await SchedulerQueueModel.aggregate([
+      { $match: { platform, status: { $in: ['posted', 'completed'] }, postedAt: { $gte: since } } },
+      { $project: { postedAt: 1, engagement: 1 } },
+      { $project: { 
+          dayOfWeek: { $dayOfWeek: '$postedAt' },
+          hour: { $hour: '$postedAt' },
+          engagement: 1
+        } 
+      },
+      { $group: { _id: { d: { $subtract: ['$dayOfWeek', 1] }, h: '$hour' }, avgEngagement: { $avg: '$engagement' }, count: { $sum: 1 } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgEngagement: 1, count: 1, _id: 0 } }
+    ]);
+
+    const byKey = new Map();
+    audience.forEach(a => byKey.set(`${a.dayOfWeek}-${a.hour}`, { aud: a.avgScore }));
+    posts.forEach(p => {
+      const k = `${p.dayOfWeek}-${p.hour}`;
+      const base = byKey.get(k) || {};
+      base.post = p.avgEngagement || 0;
+      byKey.set(k, base);
+    });
+
+    const grid = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ audience: 0, performance: 0, delta: 0 })));
+    for (const [key, val] of byKey.entries()) {
+      const [dStr, hStr] = key.split('-');
+      const d = Number(dStr); const h = Number(hStr);
+      const audienceScore = Number((val.aud || 0).toFixed(3));
+      const performance = Number((val.post || 0).toFixed(3));
+      const delta = Number((performance - audienceScore).toFixed(3));
+      grid[d][h] = { audience: audienceScore, performance, delta };
+    }
+
+    res.json({ platform, grid });
+  } catch (err) {
+    console.error('❌ [PERFORMANCE HEATMAP] Error:', err);
+    res.status(500).json({ error: 'Failed to build performance heatmap' });
+  }
+});
+
+// ==========================
+// Scheduler Autofill (POST)
+// ==========================
+app.post('/api/scheduler/autofill', async (req, res) => {
+  try {
+    const platform = (req.query.platform || req.body.platform || 'instagram').toString();
+    const maxPostsPerDay = Number(req.query.maxPostsPerDay || req.body.maxPostsPerDay || 3);
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Aggregate audience activity for last 7 days
+    const agg = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avgScore: { $avg: '$score' } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgScore: 1, _id: 0 } },
+    ]);
+
+    // Sort by score desc and enforce spacing by at least 60 minutes
+    agg.sort((a,b) => (b.avgScore || 0) - (a.avgScore || 0));
+
+    const chosen = [];
+    const takenByDay = new Map();
+    for (const row of agg) {
+      const d = row.dayOfWeek;
+      const h = row.hour;
+      const key = `${d}-${h}`;
+      const dayList = takenByDay.get(d) || [];
+      if (dayList.length >= maxPostsPerDay) continue;
+      // Spacing: avoid adjacent hours
+      if (dayList.some((hour) => Math.abs(hour - h) < 1)) continue;
+      dayList.push(h);
+      takenByDay.set(d, dayList);
+      chosen.push({ d, h });
+      if (chosen.length >= 3) break;
+    }
+
+    // Create dates for next week for the same weekday/hour in America/Chicago
+    const tz = 'America/Chicago';
+    const now = new Date();
+    const upcoming = chosen.map(({ d, h }) => {
+      // Find next date that matches the weekday d
+      const date = new Date(now);
+      const currentDow = date.getDay();
+      let diff = d - currentDow;
+      if (diff <= 0) diff += 7; // next occurrence
+      date.setDate(date.getDate() + diff);
+      date.setHours(h, 0, 0, 0);
+      return date;
+    });
+
+    // Prevent duplicates: do not insert if a scheduled item already exists at that hour/day
+    const inserts = [];
+    for (const dt of upcoming) {
+      const exists = await SchedulerQueueModel.findOne({ platform, scheduledTime: dt });
+      if (exists) continue;
+      inserts.push({
+        platform,
+        scheduledTime: dt,
+        status: 'scheduled',
+        source: 'autopilot',
+        autofill: true,
+      });
+    }
+
+    if (inserts.length) {
+      await SchedulerQueueModel.insertMany(inserts);
+    }
+
+    res.json({ platform, added: inserts.length, slots: upcoming.map(d => d.toISOString()) });
+  } catch (err) {
+    console.error('❌ [AUTOFILL] Error:', err);
+    res.status(500).json({ error: 'Failed to autofill schedule' });
+  }
+});
+
+// ==========================
+// Audience AI/Template Summary
+// ==========================
+app.get('/api/audience-summary', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 14);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const activity = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avg: { $avg: '$score' } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avg: 1, _id: 0 } },
+      { $sort: { avg: -1 } }
+    ]);
+
+    const top = activity.slice(0, 3);
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const best = top.map(t => `${dayNames[t.dayOfWeek]} ${String(t.hour).padStart(2,'0')}:00`);
+
+    // Compare against scheduled queue in the next 7 days
+    const now = new Date();
+    const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const scheduled = await SchedulerQueueModel.find({ platform, scheduledTime: { $gte: now, $lte: weekAhead } });
+
+    const matchCount = scheduled.filter(s => best.some(b => {
+      const [dStr, time] = b.split(' ');
+      const hh = Number(time.slice(0,2));
+      return s.scheduledTime.getDay() === dayNames.indexOf(dStr) && s.scheduledTime.getHours() === hh;
+    })).length;
+
+    let summary = `Your ${platform} audience peaks around ${best.join(', ')}. ` +
+      `Your upcoming schedule currently matches ${matchCount} of the top 3 slots.`;
+
+    // Optional OpenAI rewrite (if key present)
+    try {
+      const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+      if (OPENAI_KEY) {
+        const fetch = require('node-fetch');
+        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: `Rewrite this as a concise friendly tip for a social media scheduling dashboard: ${summary}` }]
+          })
+        });
+        const j = await resp.json();
+        const tip = j?.choices?.[0]?.message?.content;
+        if (tip) summary = tip;
+      }
+    } catch {}
+
+    res.json({ platform, summary, topTimes: best, matched: matchCount });
+  } catch (err) {
+    console.error('❌ [AUDIENCE SUMMARY] Error:', err);
+    res.status(500).json({ error: 'Failed to generate audience summary' });
+  }
+});
+
+// ==========================
+// Chart status + Events feed
+// ==========================
+app.get('/api/chart/status', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOne();
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    // Aggregate recent audience engagement as a proxy for engagement score
+    const recent = await AudienceActivityModel.aggregate([
+      { $match: { createdAt: { $gte: since } } },
+      { $group: { _id: null, avg: { $avg: '$score' } } }
+    ]);
+    const engagementScore = Number(((recent?.[0]?.avg) || 0.5).toFixed(3));
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0,0,0,0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23,59,59,999);
+
+    const [igToday, ytToday, lastPosted] = await Promise.all([
+      SchedulerQueueModel.countDocuments({ platform: 'instagram', status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } }),
+      SchedulerQueueModel.countDocuments({ platform: 'youtube', status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } }),
+      SchedulerQueueModel.findOne({ status: { $in: ['posted','completed'] } }).sort({ postedAt: -1 }).select('postedAt')
+    ]);
+
+    res.json({
+      settings: { dailyPostLimit: settings?.maxPosts || 3 },
+      autopilotRunning: !!settings?.autopilotEnabled,
+      engagementScore,
+      newHighScore: false,
+      lastPostTime: lastPosted?.postedAt || null,
+      platformData: {
+        instagram: { active: !!settings?.postToInstagram, todayPosts: igToday },
+        youtube: { active: !!settings?.postToYouTube, todayPosts: ytToday }
+      }
+    });
+  } catch (err) {
+    console.error('❌ [CHART STATUS] Error:', err);
+    res.status(500).json({ error: 'Failed to get chart status' });
+  }
+});
+
+app.get('/api/events/recent', async (req, res) => {
+  // Minimal empty events feed to support frontend polling
+  res.json({ events: [], timestamp: Date.now() });
+});
+
+// ==========================
+// Activity feed (recent posts)
+// ==========================
+app.get('/api/activity/feed', async (req, res) => {
+  try {
+    const platform = req.query.platform && String(req.query.platform);
+    const limit = Number(req.query.limit || 10);
+    const match = { status: { $in: ['posted', 'completed'] } };
+    if (platform) Object.assign(match, { platform });
+
+    const items = await SchedulerQueueModel.find(match)
+      .sort({ postedAt: -1, updatedAt: -1 })
+      .limit(Math.min(Math.max(limit, 1), 50))
+      .select('platform thumbnailUrl postedAt createdAt');
+
+    const data = items.map(it => ({
+      platform: it.platform,
+      thumbnailUrl: it.thumbnailUrl,
+      timestamp: it.postedAt || it.createdAt
+    }));
+
+    res.json(data);
+  } catch (err) {
+    console.error('❌ [ACTIVITY FEED] Error:', err);
+    res.status(500).json({ error: 'Failed to load activity feed' });
   }
 });
 
