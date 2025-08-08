@@ -87,6 +87,17 @@ const schedulerQueueSchema = new mongoose.Schema({
 
 const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
 
+// Audience Activity schema for hourly engagement logging
+const audienceActivitySchema = new mongoose.Schema({
+  platform: { type: String, enum: ['instagram', 'youtube'], required: true },
+  hour: { type: Number, min: 0, max: 23, required: true },
+  dayOfWeek: { type: Number, min: 0, max: 6, required: true },
+  score: { type: Number, min: 0, max: 1, required: true },
+  raw: { type: mongoose.Schema.Types.Mixed },
+}, { timestamps: true, collection: 'AudienceActivity' });
+
+const AudienceActivityModel = mongoose.model('AudienceActivity', audienceActivitySchema);
+
 // API Routes
 
 // Start cron scheduler (America/Chicago)
@@ -348,6 +359,44 @@ app.get('/api/analytics', async (req, res) => {
 });
 
 // (uploads endpoints intentionally not added here to preserve production backend contract)
+
+// Audience score endpoint: computes per-hour audience engagement and logs
+app.get('/api/audience/score', async (req, res) => {
+  try {
+    const hour = parseInt(String(req.query.hour ?? new Date().getHours()), 10);
+    const dayOfWeek = parseInt(String(req.query.dayOfWeek ?? new Date().getDay()), 10);
+
+    // Basic heuristic from analytics as a placeholder for live per-hour metrics
+    // You can replace with platform APIs that return current viewers/impressions per hour
+    const { getInstagramAnalytics } = require('./services/instagramAnalytics');
+    const { getYouTubeAnalytics } = require('./services/youtubeAnalytics');
+    const [ig, yt] = await Promise.all([
+      getInstagramAnalytics(SettingsModel).catch(() => ({})),
+      getYouTubeAnalytics(SettingsModel).catch(() => ({})),
+    ]);
+
+    // Normalize rough scores 0..1
+    const igEng = (typeof ig.engagement === 'number' ? ig.engagement : (ig.engagementRate || 0));
+    const igScore = Math.max(0, Math.min(1, (igEng > 1 ? igEng / 100 : igEng)));
+    const ytViews = Number(yt.views || 0);
+    const ytSubs = Number(yt.subscribers || 1);
+    const ytScore = Math.max(0, Math.min(1, ytSubs ? (ytViews / (ytSubs * 50)) : 0));
+
+    const instagram = Number(igScore.toFixed(3));
+    const youtube = Number(ytScore.toFixed(3));
+
+    // Log to Mongo for trend analysis
+    const docs = [
+      { platform: 'instagram', hour, dayOfWeek, score: instagram, raw: { ig } },
+      { platform: 'youtube', hour, dayOfWeek, score: youtube, raw: { yt } },
+    ];
+    try { await AudienceActivityModel.insertMany(docs); } catch {}
+
+    res.json({ instagram, youtube, hour, dayOfWeek });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to compute audience score' });
+  }
+});
 
 // Heart chart backend routes removed per request.
 
