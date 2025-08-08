@@ -350,8 +350,59 @@ app.get('/api/analytics', async (req, res) => {
 // (uploads endpoints intentionally not added here to preserve production backend contract)
 
 // Missing API endpoints that frontend is calling
-app.get('/api/chart/status', (req, res) => {
-  res.json({ status: 'active', charts: ['engagement', 'reach'] });
+app.get('/api/chart/status', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOne();
+    const autopilotEnabled = !!settings?.autopilotEnabled;
+
+    // Basic structure the frontend expects
+    const response = {
+      status: autopilotEnabled ? 'active' : 'idle',
+      engagement: 0.0,
+      newRecord: false,
+      autopilotRunning: autopilotEnabled,
+      lastPostTime: null,
+      platformData: {
+        instagram: {
+          active: autopilotEnabled,
+          todayPosts: 0,
+          reach: 0,
+          engagement: 0,
+          lastPostTime: null,
+          trendingAudio: false,
+        },
+        youtube: {
+          active: autopilotEnabled,
+          todayPosts: 0,
+          reach: 0,
+          engagement: 0,
+          lastPostTime: null,
+          trendingAudio: false,
+        }
+      }
+    };
+
+    // Try enriching with analytics
+    try {
+      const { getInstagramAnalytics } = require('./services/instagramAnalytics');
+      const ig = await getInstagramAnalytics(SettingsModel);
+      response.platformData.instagram.reach = ig.reach || 0;
+      // normalize engagement (0-1)
+      const igEng = typeof ig.engagement === 'number' ? ig.engagement : (ig.engagementRate || 0);
+      response.platformData.instagram.engagement = igEng > 1 ? igEng / 100 : igEng;
+    } catch {}
+    try {
+      const { getYouTubeAnalytics } = require('./services/youtubeAnalytics');
+      const yt = await getYouTubeAnalytics(SettingsModel);
+      response.platformData.youtube.reach = yt.views || 0;
+      // YouTube engagement is approximated by avgViews/subscribers
+      response.platformData.youtube.engagement = 0; // leave 0 unless computed elsewhere
+    } catch {}
+
+    res.json(response);
+  } catch (err) {
+    res.json({ status: 'active', charts: ['engagement', 'reach'] });
+  }
 });
 
 app.get('/api/activity/feed', (req, res) => {
