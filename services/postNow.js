@@ -268,9 +268,18 @@ async function executePostNow(settings) {
     //////////////////////////////////
     
     console.log('✏️ [STEP 5] Generating smart caption...');
-    const { keepOriginalCaptionWithCTA } = require('./captionAI');
-    // Keep original caption + hashtags; only clean dashes/bullets and add CTA if missing
-    let finalCaption = keepOriginalCaptionWithCTA(selectedVideo.caption || '');
+    const { proofreadCaptionWithKey } = require('./captionAI');
+    // Keep original caption exactly; only fix spelling, then ensure CTA is present
+    const proofread = await proofreadCaptionWithKey(
+      selectedVideo.caption || '',
+      (settings && settings.openaiApiKey) ? settings.openaiApiKey : null
+    );
+    let finalCaption = proofread;
+    const lower = (finalCaption || '').toLowerCase();
+    if (!lower.includes('link in bio') && !lower.includes('link in profile')) {
+      const sep = finalCaption.length ? '\n\n' : '';
+      finalCaption = `${finalCaption}${sep}Fill out the link in bio for info.`;
+    }
     console.log(`✅ [STEP 5] Generated caption: ${finalCaption.substring(0, 100)}...`);
 
     //////////////////////////////////

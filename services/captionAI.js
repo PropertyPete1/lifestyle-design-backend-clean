@@ -450,3 +450,47 @@ function keepOriginalCaptionWithCTA(originalCaption = '') {
 }
 
 module.exports.keepOriginalCaptionWithCTA = keepOriginalCaptionWithCTA;
+
+/**
+ * Proofread only: keep caption exactly as-is (including dashes, emojis, hashtags, line breaks),
+ * correct obvious spelling mistakes. Do NOT add or remove content.
+ */
+async function proofreadCaptionWithKey(originalCaption = '', openaiApiKey) {
+  try {
+    if (!openaiApiKey) return originalCaption || '';
+    const prompt = `You are a proofreader. Return the input caption with ONLY spelling corrections.
+Rules:
+- Preserve all words, emojis, punctuation, dashes/bullets, line breaks, spacing intent, and order.
+- Do NOT shorten, expand, or rephrase.
+- Keep ALL hashtags exactly the same.
+- If phrases like "link in buo" appear, correct them to "link in bio".
+- Output ONLY the corrected caption text with no wrapping quotes.
+
+Caption:
+"""
+${originalCaption}
+"""`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1200,
+        temperature: 0.2
+      })
+    });
+    if (!response.ok) return originalCaption || '';
+    const data = await response.json();
+    const out = data.choices?.[0]?.message?.content?.trim();
+    return out || originalCaption || '';
+  } catch {
+    return originalCaption || '';
+  }
+}
+
+module.exports.proofreadCaptionWithKey = proofreadCaptionWithKey;
