@@ -176,24 +176,23 @@ async function runAutopilotOnce() {
       // Schedule time: use fixed Austin local slots (9am, 1pm, 6pm CT)
       const scheduledTime = targetSlots[i] || new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
 
-      for (const pf of platforms) {
-        await SchedulerQueueModel.create({
-          platform: pf,
-          caption: finalCaption,
-          scheduledTime,
-          status: 'scheduled',
-          source: 'autopilot',
-          videoUrl: s3Url,
-          s3Url,
-          thumbnailUrl: s3ThumbUrl || candidate.thumbnailUrl || undefined,
-          engagement: candidate.engagement,
-          originalVideoId: candidate.id
-        });
-      }
+      // Create ONE queue item for the current platform only (avoid duplicates)
+      await SchedulerQueueModel.create({
+        platform,
+        caption: finalCaption,
+        scheduledTime,
+        status: 'scheduled',
+        source: 'autopilot',
+        videoUrl: s3Url,
+        s3Url,
+        thumbnailUrl: s3ThumbUrl || candidate.thumbnailUrl || undefined,
+        engagement: candidate.engagement,
+        originalVideoId: candidate.id
+      });
 
       // Block this id for subsequent selections in this run
       blockedIds.add(candidate.id);
-      totalEnqueued += platforms.length;
+      totalEnqueued += 1;
     }
   }
 

@@ -91,9 +91,16 @@ async function postToYouTube(options) {
       const matches = (text.match(/#[A-Za-z0-9_]+/g) || []).map(h => h.replace('#', '').toLowerCase());
       return Array.from(new Set(matches));
     }
-    function pickTitleFromCaption(text = '') {
-      const noTags = text.replace(/#[A-Za-z0-9_]+/g, '').trim();
-      return noTags.slice(0, 95) || 'New video';
+    function summarizeForTitle(text = '') {
+      // Extract a price like $399,000 and a city-like word pair
+      const priceMatch = text.match(/\$\s?([0-9]{2,3}(?:,[0-9]{3})+)/);
+      const cityMatch = text.match(/in\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)/i);
+      const pricePart = priceMatch ? priceMatch[1] : null;
+      const cityPart = cityMatch ? cityMatch[1].toUpperCase() : null;
+      const base = pricePart && cityPart
+        ? `HOMES STARTING AT ${pricePart} IN ${cityPart}`
+        : (cityPart ? `NEW HOMES IN ${cityPart}` : 'NEW HOMES AVAILABLE');
+      return base.slice(0, 80);
     }
     function buildTrendingList() {
       const envList = (process.env.TRENDING_HASHTAGS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -110,17 +117,19 @@ async function postToYouTube(options) {
     }
     // Limit tags to 12
     const limitedTags = finalTags.slice(0, 12);
-    // Prepend CTA line with arrows for consistency across platforms
-    const ctaLine = '⬆️ Fill out the link in bio for info ⬆️';
-    const captionWithCta = caption.toLowerCase().includes('link in bio') || caption.toLowerCase().includes('link in profile')
-      ? (caption.startsWith('⬅️') ? caption : `${ctaLine}\n\n${caption}`)
-      : `${ctaLine}\n\n${caption}`;
+    // Only add CTA if not already present anywhere
+    const hasCta = /(link in bio|link in profile)/i.test(caption || '');
+    const captionWithCta = hasCta ? caption : `⬆️ Fill out the link in bio for info ⬆️\n\n${caption}`;
 
-    const title = pickTitleFromCaption(captionWithCta);
+    // Build title from summary + top 3 hashtags
+    const baseTitle = summarizeForTitle(captionWithCta);
     // Keep original caption; just append hashtags if not already present
     const existingHashtags = extractHashtags(captionWithCta);
     const extra = limitedTags.filter(t => !existingHashtags.includes(t));
     const hashtagsLine = extra.length ? extra.map(t => `#${t}`).join(' ') : '';
+    const top3 = extra.slice(0, 3).map(t => `#${t}`).join(' ');
+    const title = top3 ? `${baseTitle} ${top3}`.trim().slice(0, 95) : baseTitle;
+    // Description uses the IG caption with CTA + the full hashtag list
     const description = (hashtagsLine ? `${captionWithCta}\n\n${hashtagsLine}` : captionWithCta).slice(0, 4900);
 
     // Use Resumable upload to avoid multipart issues
@@ -184,7 +193,7 @@ async function postToYouTube(options) {
     }
     
     console.log('✅ [YOUTUBE] Video uploaded successfully:', uploadData.id);
-    // No custom thumbnail — rely on first-frame ( Shorts behavior )
+    // No custom thumbnail for now – rely on first-frame. Optionally, we can upload a generated thumbnail later.
     
     return {
       success: true,
