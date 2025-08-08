@@ -166,10 +166,12 @@ async function runAutopilotOnce() {
         }
       } catch (_) {}
 
-      // Caption: proofread + top CTA arrows
+      // Caption: proofread, then add CTA ONLY if not already present anywhere
       const ctaLine = '⬆️ Fill out the link in bio for info ⬆️';
       const proof = await proofreadCaptionWithKey(candidate.caption || '', settings.openaiApiKey || null);
-      const finalCaption = `${ctaLine}\n\n${proof || ''}`.trim();
+      const body = (proof || '').trim();
+      const hasCta = /\b(link in bio|link in profile)\b/i.test(body) || body.includes('⬆️') || body.includes('⬇️');
+      const finalCaption = hasCta ? body : `${ctaLine}\n\n${body}`.trim();
 
       // Schedule time: use fixed Austin local slots (9am, 1pm, 6pm CT)
       const scheduledTime = targetSlots[i] || new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);

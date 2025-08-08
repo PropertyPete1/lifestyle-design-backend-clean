@@ -277,28 +277,15 @@ async function executePostNow(settings) {
     
     console.log('✏️ [STEP 5] Generating smart caption...');
     const { proofreadCaptionWithKey } = require('./captionAI');
-    // Keep original caption exactly; only fix spelling, then ensure CTA is at the TOP with arrows
+    // Keep original caption exactly; only fix spelling, then ensure CTA exists ONLY if not already present
     const proofread = await proofreadCaptionWithKey(
       selectedVideo.caption || '',
       (settings && settings.openaiApiKey) ? settings.openaiApiKey : null
     );
     const ctaRegex = /(link in bio|link in profile)/i;
     const ctaLine = '⬆️ Fill out the link in bio for info ⬆️';
-    const lines = (proofread || '').split('\n');
-    let idx = 0;
-    while (idx < lines.length && lines[idx].trim() === '') idx++;
-    const firstLine = lines[idx] || '';
-    if (ctaRegex.test(firstLine)) {
-      // Ensure up arrows on the first non-empty line
-      lines[idx] = `⬆️ ${firstLine.trim()} ⬆️`;
-      finalCaption = lines.join('\n');
-    } else if (ctaRegex.test(proofread || '')) {
-      // CTA exists somewhere else; still add a top CTA with arrows
-      finalCaption = `${ctaLine}\n\n${proofread}`;
-    } else {
-      // No CTA at all; add top CTA with arrows
-      finalCaption = `${ctaLine}\n\n${proofread}`;
-    }
+    const hasCta = ctaRegex.test(proofread || '');
+    finalCaption = hasCta ? (proofread || '') : `${ctaLine}\n\n${proofread || ''}`;
     console.log(`✅ [STEP 5] Generated caption: ${finalCaption.substring(0, 100)}...`);
 
     //////////////////////////////////
