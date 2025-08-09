@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Enable loading TypeScript service files (idempotency/locks)
+try { require('ts-node/register/transpile-only'); } catch (e) { console.warn('⚠️ ts-node/register not available:', e?.message || e); }
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -102,6 +104,24 @@ const audienceActivitySchema = new mongoose.Schema({
 const AudienceActivityModel = mongoose.model('AudienceActivity', audienceActivitySchema);
 
 // API Routes
+
+// Idempotent Post-Now debug endpoint: today counts + last 5 per platform
+try {
+  const { DailyCounterModel } = require('./models/DailyCounter');
+  const { PostModel } = require('./models/Post');
+  app.get('/api/posting/debug', async (req, res) => {
+    try {
+      const today = new Date();
+      const dateKey = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      const counters = await DailyCounterModel.find({ dateKey }).lean();
+      const lastIg = await PostModel.find({ platform: 'instagram' }).sort({ createdAt: -1 }).limit(5).lean();
+      const lastYt = await PostModel.find({ platform: 'youtube' }).sort({ createdAt: -1 }).limit(5).lean();
+      res.json({ dateKey, counters, last: { instagram: lastIg, youtube: lastYt } });
+    } catch (e) {
+      res.status(500).json({ error: e?.message || 'debug failed' });
+    }
+  });
+} catch(_) {}
 
 // Zillow Assistant routes removed per request
 

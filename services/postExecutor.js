@@ -3,8 +3,14 @@
  * Uses existing Instagram and YouTube posting services
  */
 
-const { postToInstagram } = require('./instagramPoster');
-const { postToYouTube } = require('./youtubePoster');
+// Idempotent execute via TypeScript scheduler wrapper
+let executeQueueItemOnce;
+try {
+  executeQueueItemOnce = require('./scheduler').executeQueueItemOnce;
+} catch (_) {
+  // Fallback will be resolved when ts-node/register is active
+  executeQueueItemOnce = require('./scheduler').executeQueueItemOnce;
+}
 
 /**
  * @param {Object} queueItem - Scheduled post from SchedulerQueue
@@ -20,23 +26,15 @@ async function executeScheduledPost(queueItem, settings) {
     return { success: false, platform, error: 'Missing videoUrl for scheduled post' };
   }
 
-  if (platform === 'instagram') {
-    const result = await postToInstagram({
-      videoUrl,
-      caption,
-      source: 'autopilot'
-    });
-    return result;
+  // Use exactly-once wrapper for both platforms
+  const result = await executeQueueItemOnce(queueItem, settings);
+  if (result.success) {
+    return { success: true, platform, postId: result.externalPostId, url: undefined };
   }
-
-  if (platform === 'youtube') {
-    const result = await postToYouTube({
-      videoUrl,
-      caption,
-      source: 'autopilot'
-    });
-    return result;
+  if (result.deduped) {
+    return { success: true, platform, postId: result.externalPostId, url: undefined };
   }
+  return { success: false, platform, error: result.note || 'post failed' };
 
   return { success: false, platform, error: `Unsupported platform: ${platform}` };
 }
