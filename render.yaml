@@ -3,8 +3,8 @@ services:
     name: lifestyle-design-backend-v2-clean
     env: node
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
     healthCheckPath: /health
     buildTimeoutSec: 1800
     rootDir: .

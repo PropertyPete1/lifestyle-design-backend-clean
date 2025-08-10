@@ -1,13 +1,13 @@
 {
   "name": "lifestyle-design-backend-v2-clean",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Backend v2 for Lifestyle Design Auto Poster",
-  "main": "server.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node server.js",
-    "build": "echo 'No build step needed'",
-    "dev": "node server.js",
-    "postinstall": "echo 'Dependencies installed'",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "ts-node --transpile-only server.ts",
+    "postinstall": "npm run build",
     "render-fast": "npm ci --only=production --silent --no-audit --no-fund || npm install --production --silent --no-audit --no-fund"
   },
   "engines": {

@@ -21,3 +21,4 @@ export async function incrementDailyCounter(platform: 'instagram' | 'youtube'): 
 
 module.exports = { getRemainingSlots, incrementDailyCounter };
 
+

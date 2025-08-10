@@ -14,6 +14,13 @@ export interface PostDoc extends Document {
     videoUrl?: string;
     captionPreview?: string;
   };
+  // New dedupe/metadata fields
+  postedAt?: Date;
+  visualHash?: string;      // aHash/pHash or robust hash
+  audioKey?: string;        // stable audio identifier
+  captionNorm?: string;     // normalized caption
+  durationSec?: number;     // integer seconds
+  thumbUrl?: string;        // S3 PNG (0s frame) for YT or IG preview
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,11 +36,19 @@ const PostSchema = new Schema<PostDoc>({
   payloadSummary: {
     videoUrl: { type: String },
     captionPreview: { type: String }
-  }
+  },
+  postedAt: { type: Date, index: true },
+  visualHash: { type: String },
+  audioKey: { type: String },
+  captionNorm: { type: String },
+  durationSec: { type: Number },
+  thumbUrl: { type: String }
 }, { timestamps: true, collection: 'Posts' });
 
 PostSchema.index({ idempotencyKey: 1 }, { unique: true });
 PostSchema.index({ platform: 1, scheduledAt: 1 });
+PostSchema.index({ platform: 1, postedAt: -1 });
+PostSchema.index({ platform: 1, visualHash: 1, postedAt: -1 });
 
 export const PostModel: Model<PostDoc> = (mongoose.models.Posts as Model<PostDoc>) || mongoose.model<PostDoc>('Posts', PostSchema);
 

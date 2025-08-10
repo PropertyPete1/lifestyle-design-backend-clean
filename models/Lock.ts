@@ -19,3 +19,4 @@ export const LockModel: Model<LockDoc> = (mongoose.models.PostingLocks as Model<
 
 module.exports = { LockModel };
 
+

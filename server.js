@@ -109,6 +109,7 @@ const AudienceActivityModel = mongoose.model('AudienceActivity', audienceActivit
 try {
   const { DailyCounterModel } = require('./models/DailyCounter');
   const { PostModel } = require('./models/Post');
+  const { runAutopilotDiagnostics } = require('./services/diagnostics');
   app.get('/api/posting/debug', async (req, res) => {
     try {
       const today = new Date();
@@ -119,6 +120,17 @@ try {
       res.json({ dateKey, counters, last: { instagram: lastIg, youtube: lastYt } });
     } catch (e) {
       res.status(500).json({ error: e?.message || 'debug failed' });
+    }
+  });
+
+  // Diagnostics: why no posts today
+  app.get('/api/diag/why-no-posts-today', async (req, res) => {
+    try {
+      const result = await runAutopilotDiagnostics();
+      res.json(result);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Diagnostic failed', details: err?.message || String(err) });
     }
   });
 } catch(_) {}

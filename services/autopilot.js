@@ -128,11 +128,20 @@ async function runAutopilotOnce() {
   const pending = await SchedulerQueueModel.find({ status: { $in: ['pending','scheduled'] } }).select('originalVideoId').lean();
   for (const x of pending) if (x.originalVideoId) blockedIds.add(x.originalVideoId);
 
+  // Optimal slots from heatmap
+  let optimal;
+  try {
+    const { computeOptimalTimes } = require('./heatmap');
+    optimal = await computeOptimalTimes(Number(settings.maxPosts || 5));
+  } catch (_) { optimal = { platforms, slots: [] }; }
+
   // Count current pending per platform for next 24h
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24*60*60*1000);
 
   let totalEnqueued = 0;
+  let totalSkipped = 0;
+  const skipReasons = [];
   const { uploadUrlToS3, uploadBufferToS3 } = require('../utils/s3Uploader');
   const { generateThumbnailBuffer } = require('../utils/videoThumbnail');
   const { proofreadCaptionWithKey } = require('./captionAI');
@@ -142,17 +151,18 @@ async function runAutopilotOnce() {
   for (const platform of platforms) {
     const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
     const need = Math.max(0, maxPosts - existing);
-    // Use fixed optimal local times: 9:00, 13:00, 18:00 in user's timezone
-    const targetSlots = getNextFixedLocalSlots(need, tz, [9, 13, 18]);
+    // Use heatmap optimal slots first, then fallback
+    const slotList = (optimal?.slots || []).filter((s:any)=>s.platform===platform).slice(0, need);
     for (let i = 0; i < need; i++) {
+      const desired = slotList[i] ? new Date(slotList[i].iso) : null;
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
-      if (!candidate) break;
+      if (!candidate) { totalSkipped += 1; skipReasons.push('NO_UNIQUE_CANDIDATE'); break; }
 
       // Upload once (video)
       const s3Key = `autopilot/queue/${Date.now()}_${Math.random().toString(36).slice(2,8)}.mp4`;
       const s3Url = await uploadUrlToS3(candidate.url, s3Key, 'video/mp4');
 
-      // Upload thumbnail (image) for UI preview when available
+      // Upload thumbnail (image) for UI preview when available + persist
       let s3ThumbUrl = null;
       try {
         // Prefer IG thumbnail if available; otherwise capture from video
@@ -174,9 +184,21 @@ async function runAutopilotOnce() {
       const finalCaption = hasCta ? body : `${ctaLine}\n\n${body}`.trim();
 
       // Schedule time: use fixed Austin local slots (9am, 1pm, 6pm CT)
-      const scheduledTime = targetSlots[i] || new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
+      const scheduledTime = desired || new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
 
       // Create ONE queue item for the current platform only (avoid duplicates)
+      // Compute dedupe signals
+      let visualHash = null;
+      try {
+        const { computeAverageHashFromImageUrl } = require('../utils/visualHash');
+        const imgForHash = s3ThumbUrl || candidate.thumbnailUrl || candidate.url;
+        visualHash = await computeAverageHashFromImageUrl(imgForHash);
+      } catch (_) {}
+      const { normalizeCaption } = require('./candidateBuilder');
+      const captionNorm = normalizeCaption(candidate.caption || '');
+      const audioKey = candidate.audioId || candidate.musicMetadata?.music_product_id || candidate.musicMetadata?.song_name || candidate.musicMetadata?.artist_name || undefined;
+      const durationSec = typeof candidate.duration === 'number' ? Math.round(candidate.duration) : undefined;
+
       await SchedulerQueueModel.create({
         platform,
         caption: finalCaption,
@@ -186,6 +208,10 @@ async function runAutopilotOnce() {
         videoUrl: s3Url,
         s3Url,
         thumbnailUrl: s3ThumbUrl || candidate.thumbnailUrl || undefined,
+        visualHash: visualHash || undefined,
+        captionNorm,
+        audioKey,
+        durationSec,
         engagement: candidate.engagement,
         originalVideoId: candidate.id
       });
@@ -196,7 +222,7 @@ async function runAutopilotOnce() {
     }
   }
 
-  return { success: true, message: 'Autopilot queue updated', processed: totalEnqueued };
+  return { success: true, message: 'Autopilot queue updated', processed: totalEnqueued, scheduled: totalEnqueued, skipped: totalSkipped, reasons: skipReasons };
 }
 
 module.exports = { runAutopilotOnce };

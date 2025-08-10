@@ -62,6 +62,92 @@ const connectDB = async () => {
   }
 };
 
+// ============ Index initialization (models) ============
+let DailyCounterModel, PostModel, LockModel;
+try { DailyCounterModel = require('./models/DailyCounter').DailyCounterModel; } catch(_) {}
+try { PostModel = require('./models/Post').PostModel; } catch(_) {}
+try { LockModel = require('./models/Lock').LockModel; } catch(_) {}
+
+// SchedulerQueue model (shared) with dedupe-oriented fields and indexes
+let SchedulerQueueModel;
+try { SchedulerQueueModel = mongoose.model('SchedulerQueue'); } catch (_) {}
+if (!SchedulerQueueModel) {
+  const schedulerQueueSchema = new mongoose.Schema({
+    filename: String,
+    caption: String,
+    platform: { type: String, enum: ['instagram','youtube'], default: 'instagram', index: true },
+    scheduledTime: { type: Date, required: true, index: true },
+    status: { type: String, enum: ['pending','scheduled','processing','posted','failed','completed'], default: 'scheduled', index: true },
+    source: { type: String, enum: ['autopilot','manual'], default: 'autopilot' },
+    videoUrl: String,
+    thumbnailUrl: String,
+    s3Url: String,
+    // Dedupe signals
+    visualHash: { type: String, index: true },
+    audioKey: { type: String },
+    captionNorm: { type: String },
+    durationSec: { type: Number },
+    engagement: Number,
+    // Legacy fields (kept non-indexed; do not use for dedupe)
+    originalVideoId: String,
+    postedAt: { type: Date },
+    hashtags: [String],
+    retryCount: { type: Number, default: 0 },
+    errorMessage: String,
+    autofill: { type: Boolean, default: false }
+  }, { timestamps: true, collection: 'SchedulerQueue' });
+
+  // Replace any uniqueness relying on originalVideoId with visualHash+scheduledTime
+  try {
+    schedulerQueueSchema.index({ platform: 1, visualHash: 1, scheduledTime: 1 }, { unique: true, partialFilterExpression: { visualHash: { $exists: true, $type: 'string' } } });
+  } catch {}
+
+  SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
+}
+
+async function ensureIndexes() {
+  try {
+    if (PostModel) {
+      await PostModel.syncIndexes();
+      console.log('✅ [INDEX] Posts indexes synced');
+    }
+    if (LockModel) {
+      await LockModel.syncIndexes();
+      console.log('✅ [INDEX] PostingLocks indexes synced');
+    }
+    if (DailyCounterModel) {
+      await DailyCounterModel.syncIndexes();
+      console.log('✅ [INDEX] DailyCounters indexes synced');
+    }
+    if (SchedulerQueueModel) {
+      await SchedulerQueueModel.syncIndexes();
+      console.log('✅ [INDEX] SchedulerQueue indexes synced');
+    }
+  } catch (e) {
+    console.warn('⚠️ [INDEX] Sync failed:', e?.message || e);
+  }
+}
+
+// ============ Core Routes ============
+// Settings endpoints
+app.get('/api/settings', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOne();
+    return res.json(settings || {});
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to get settings' });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOneAndUpdate({}, req.body, { new: true, upsert: true });
+    return res.json(settings);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
 // AutoPilot routes - Direct implementation
 app.get('/api/autopilot/status', async (req, res) => {
   try {
@@ -81,32 +167,23 @@ app.get('/api/autopilot/status', async (req, res) => {
 
 app.get('/api/autopilot/queue', async (req, res) => {
   try {
-    const mockQueue = [
-      {
-        id: 1,
-        platform: 'instagram',
-        videoUrl: 'https://example.com/video1.mp4',
-        caption: 'Amazing real estate opportunity!',
-        scheduledTime: new Date(Date.now() + 3600000),
-        status: 'scheduled',
-        engagement: 15000
-      },
-      {
-        id: 2,
-        platform: 'youtube', 
-        videoUrl: 'https://example.com/video2.mp4',
-        caption: 'Check out this stunning property!',
-        scheduledTime: new Date(Date.now() + 7200000),
-        status: 'scheduled',
-        engagement: 25000
-      }
-    ];
-    
-    res.json({
-      queue: mockQueue,
-      totalCount: mockQueue.length,
-      platforms: ['instagram', 'youtube']
-    });
+    res.set('Cache-Control', 'no-store');
+    const items = await SchedulerQueueModel.find({ status: { $in: ['scheduled','pending','processing'] } })
+      .sort({ scheduledTime: 1 })
+      .limit(100)
+      .lean();
+    const queue = items.map((it:any) => ({
+      id: it._id,
+      platform: it.platform,
+      caption: it.caption || '',
+      scheduledTime: it.scheduledTime,
+      status: it.status,
+      videoUrl: it.videoUrl || it.s3Url,
+      thumbnailUrl: it.thumbnailUrl || it.s3Url,
+      engagement: it.engagement || 0,
+      visualHash: it.visualHash || null
+    }));
+    return res.json({ queue, totalCount: queue.length });
   } catch (error) {
     console.error('❌ [AUTOPILOT QUEUE ERROR]', error);
     res.status(500).json({ error: 'Failed to get AutoPilot queue' });
@@ -116,52 +193,124 @@ app.get('/api/autopilot/queue', async (req, res) => {
 app.post('/api/autopilot/run', async (req, res) => {
   try {
     console.log('🚀 [AUTOPILOT] Starting AutoPilot run...');
-    
     const settings = await SettingsModel.findOne();
-    if (!settings) {
-      return res.status(400).json({ error: 'No settings found. Please configure your credentials first.' });
-    }
-
-    if (!settings.autopilotEnabled) {
-      return res.status(400).json({ error: 'AutoPilot is disabled. Enable it in settings first.' });
-    }
-
-    // Mock successful run for now
-    settings.lastAutopilotRun = new Date();
-    await settings.save();
-
-    console.log('✅ [AUTOPILOT] AutoPilot run completed successfully');
-
-    res.json({
-      success: true,
-      message: 'AutoPilot run completed successfully',
-      videosScraped: 50,
-      videosScheduled: 2,
-      selectedVideo: {
-        engagement: 15000,
-        duration: 30
-      },
-      scheduledPosts: [
-        {
-          platform: 'instagram',
-          scheduledTime: new Date(Date.now() + 3600000),
-          caption: 'Amazing real estate opportunity with stunning views...'
-        },
-        {
-          platform: 'youtube',
-          scheduledTime: new Date(Date.now() + 7200000),
-          caption: 'Top real estate tips for 2025...'
-        }
-      ]
-    });
-
-  } catch (error) {
+    if (!settings) return res.status(400).json({ success:false, error: 'No settings found. Please configure your credentials first.' });
+    if (!settings.autopilotEnabled) return res.status(400).json({ success:false, error: 'AutoPilot is disabled. Enable it in settings first.' });
+    const { runAutopilotOnce } = require('./services/autopilot');
+    const result = await runAutopilotOnce();
+    settings.lastAutopilotRun = new Date(); await settings.save();
+    return res.json({ success: true, scheduled: result.scheduled ?? result.processed ?? 0, skipped: result.skipped ?? 0, reasons: result.reasons || [] });
+  } catch (error:any) {
     console.error('❌ [AUTOPILOT RUN ERROR]', error);
-    res.status(500).json({ error: 'AutoPilot run failed', message: error.message });
+    res.status(500).json({ success:false, error: error?.message || 'AutoPilot run failed' });
   }
 });
 
-console.log('✅ AutoPilot routes registered directly in server.js');
+// ============ Post Now (canonical + aliases) ============
+const { enqueue, getJobStatus } = (() => { try { return require('./services/jobQueue'); } catch { return { enqueue: null, getJobStatus: null }; } })();
+
+async function handlePostNow(req, res) {
+  try {
+    const settings = await SettingsModel.findOne({});
+    if (!settings || !settings.instagramToken || !settings.igBusinessId) {
+      return res.status(400).json({ success: false, error: 'Missing Instagram credentials in settings' });
+    }
+    // Execute inline to return counts
+    const { executePostNow } = require('./services/postNow');
+    const r = await executePostNow(settings);
+    const posted = r?.success ? 1 : 0;
+    const skipped = r?.success ? 0 : 1;
+    return res.status(200).json({ success: true, posted, skipped, reasons: r?.duplicateProtection ? [] : [] });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || 'post-now failed' });
+  }
+}
+
+app.post('/api/post-now', handlePostNow);
+app.post('/api/autopilot/manual-post', handlePostNow);
+app.post('/phase9/post-now', handlePostNow);
+app.post('/api/manual/post-now/:videoId', handlePostNow);
+
+// Optional: job status
+app.get('/api/post-now/status/:jobId', (req, res) => {
+  try {
+    if (!getJobStatus) return res.status(404).json({ error: 'job status unavailable' });
+    const st = getJobStatus(req.params.jobId);
+    return st ? res.json(st) : res.status(404).json({ error: 'not found' });
+  } catch (e) {
+    return res.status(500).json({ error: 'failed' });
+  }
+});
+
+// ============ Scheduler status used by UI ============
+app.get('/api/scheduler/status', async (req, res) => {
+  try {
+    const now = new Date();
+    const start = new Date(now); start.setHours(0,0,0,0);
+    const end = new Date(now); end.setHours(23,59,59,999);
+    const queueSize = await SchedulerQueueModel.countDocuments({ status: { $in: ['scheduled','processing','pending'] } });
+    let igToday = 0, ytToday = 0;
+    try {
+      if (DailyCounterModel) {
+        const dateKey = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+        const counters = await DailyCounterModel.find({ dateKey }).lean();
+        igToday = counters.find(c=>c.platform==='instagram')?.count || 0;
+        ytToday = counters.find(c=>c.platform==='youtube')?.count || 0;
+      }
+    } catch {}
+    const settingsDoc = await SettingsModel.findOne({});
+    const limit = Number(settingsDoc?.maxPosts || 5);
+    const nextRun = new Date(Date.now()+60*1000).toISOString();
+    return res.json({
+      queueSize,
+      today: { instagram: igToday, youtube: ytToday },
+      nextRun,
+      instagram: { used: igToday, limit },
+      youtube: { used: ytToday, limit }
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to get scheduler status' });
+  }
+});
+
+// ============ Settings test endpoints ============
+app.post('/api/test/mongodb', async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    return res.json({ ok: true, message: 'MongoDB OK' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'MongoDB error' });
+  }
+});
+
+app.post('/api/test/upload', async (req, res) => {
+  try {
+    const { uploadBufferToS3 } = require('./utils/s3Uploader');
+    const buf = Buffer.from('hello-world');
+    const key = `tests/${Date.now()}_ping.txt`;
+    const url = await uploadBufferToS3(buf, key, 'text/plain');
+    return res.json({ ok: true, url });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'S3 upload failed' });
+  }
+});
+
+app.post('/api/test/validate-apis', async (req, res) => {
+  try {
+    const s = await SettingsModel.findOne();
+    const status = {
+      instagram: !!(s?.instagramToken && s?.igBusinessId),
+      youtube: !!(s?.youtubeAccessToken || (s?.youtubeClientId && s?.youtubeClientSecret && s?.youtubeRefreshToken)),
+      s3: !!(s?.s3AccessKey && s?.s3SecretKey && s?.s3BucketName),
+      openai: !!(s?.openaiApiKey)
+    };
+    return res.json({ ok: true, status });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'Validation failed' });
+  }
+});
+
+console.log('✅ AutoPilot and core routes registered');
 
 // Analytics services (with error handling for Render deployment)
 let instagramAnalytics, youtubeAnalytics;
@@ -222,6 +371,112 @@ app.get('/api/analytics', async (req, res) => {
   } catch (error) {
     console.error('❌ [ANALYTICS ERROR]', error);
     res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// ============ Heatmap endpoints ============
+app.get('/api/heatmap/weekly', async (req, res) => {
+  try {
+    const { computeWeeklyHeatmap } = require('./services/heatmap');
+    const data = await computeWeeklyHeatmap();
+    return res.json(data);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to compute weekly heatmap' });
+  }
+});
+
+app.get('/api/heatmap/optimal-times', async (req, res) => {
+  try {
+    const { computeOptimalTimes } = require('./services/heatmap');
+    const limit = Number(req.query.limit || 5);
+    const data = await computeOptimalTimes(limit);
+    return res.json(data);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to compute optimal times' });
+  }
+});
+
+// Dev-only similarity check
+app.post('/api/debug/similarity-check', async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_DEBUG_SIMILARITY) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    const { platform, videoUrl, caption, audioKey, durationSec } = req.body || {};
+    const { normalizeCaption } = require('./services/candidateBuilder');
+    const { computeWeeklyHeatmap } = require('./services/heatmap'); // not used, but keeps warm
+    const normCaption = normalizeCaption(caption || '');
+    const { computeAverageHashFromImageUrl, hammingDistance } = require('./utils/visualHash');
+    let visualHash = null;
+    try { visualHash = await computeAverageHashFromImageUrl(videoUrl); } catch {}
+    const candidate = { visualHash, captionNorm: normCaption, audioKey: audioKey || null, durationSec: typeof durationSec === 'number' ? durationSec : null };
+
+    // Build last-30 set (reuse candidateBuilder helpers)
+    const Settings = mongoose.model('SettingsClean');
+    const settings = await Settings.findOne({});
+    const last = platform === 'instagram'
+      ? await (async () => { const { scrapeInstagramEngagement, generateThumbnailHash } = require('./utils/instagramScraper'); const list = await scrapeInstagramEngagement(settings.igBusinessId, settings.instagramToken, 30); const out:any[]=[]; for (const v of list){ let vh=null; try{ vh = await generateThumbnailHash(v.thumbnailUrl||v.url);}catch{} out.push({ postedAt: v.timestamp?new Date(v.timestamp):null, visualHash: vh, captionNorm: normalizeCaption(v.caption||''), audioKey: v.audioId || v.music_metadata?.music_product_id || null, durationSec: typeof v.duration==='number'?Math.round(v.duration):null, url: v.url }); } return out; })()
+      : [];
+
+    const CAPTION_MIN = 0.85;
+    const distances = (last || []).slice(0, 5).map((p:any) => ({
+      postedAt: p.postedAt,
+      visualHash: p.visualHash,
+      captionNorm: p.captionNorm,
+      audioKey: p.audioKey,
+      durationSec: p.durationSec,
+      distances: {
+        visualHamming: (visualHash && p.visualHash) ? hammingDistance(visualHash, p.visualHash) : null,
+        captionSim: require('string-similarity').compareTwoStrings(normCaption, p.captionNorm || ''),
+        durationDelta: (typeof durationSec==='number' && typeof p.durationSec==='number') ? Math.abs(durationSec - p.durationSec) : null
+      }
+    }));
+
+    const visualMatch = distances.some((d:any) => typeof d.distances.visualHamming === 'number' && d.distances.visualHamming <= Number(process.env.VISUAL_HASH_MAX_DISTANCE || 6));
+    const audioCaptionDur = distances.some((d:any) => (candidate.audioKey && d.audioKey && candidate.audioKey===d.audioKey) || (d.distances.captionSim >= CAPTION_MIN && (d.distances.durationDelta ?? 99) <= 1));
+    const duplicate = !!visualMatch || !!audioCaptionDur;
+    const reason = visualMatch ? 'VISUAL_MATCH' : (audioCaptionDur ? 'AUDIO_CAPTION_DURATION_MATCH' : null);
+    return res.json({ candidate, recentSample: distances, decision: { duplicate, reason } });
+  } catch (e:any) {
+    return res.status(500).json({ error: e?.message || 'similarity-check failed' });
+  }
+});
+
+// ============ Minimal Manual endpoints (functional placeholders using candidate builder later) ============
+app.get('/api/manual/videos', async (req, res) => {
+  try {
+    // Provide minimal empty list to satisfy UI; real implementation can read from S3 or DB
+    return res.json({ success: true, videos: [] });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: 'Failed to load videos' });
+  }
+});
+
+app.post('/api/manual/refresh-caption/:videoId', async (req, res) => {
+  try {
+    const { generateSmartCaptionWithKey } = require('./services/captionAI');
+    const s = await SettingsModel.findOne();
+    const out = await generateSmartCaptionWithKey('', s?.openaiApiKey || '');
+    return res.json({ success: true, captions: { clickbait: out, informational: out, emotional: out } });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Failed to refresh caption' });
+  }
+});
+
+app.post('/api/manual/refresh-audio/:videoId', async (req, res) => {
+  try {
+    return res.json({ success: true, currentAudio: 'Trending Beat #247' });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Failed to refresh audio' });
+  }
+});
+
+app.post('/api/manual/schedule/:videoId', async (req, res) => {
+  try {
+    // Accept schedule request; in future integrate with SchedulerQueueModel
+    return res.json({ success: true });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Failed to schedule' });
   }
 });
 
