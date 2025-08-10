@@ -214,12 +214,13 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
  * @param {Object} SchedulerQueueModel - Mongoose model for queue
  * @param {Object} SettingsModel - Mongoose model for settings
  */
-function startCronScheduler(SchedulerQueueModel, SettingsModel) {
+function startCronScheduler(SchedulerQueueModel, SettingsModel, onTick) {
   console.log('⏰ [CRON] Starting cron scheduler - checking every minute');
   
   // Run every minute: '* * * * *'
   // For testing, you can use '*/10 * * * * *' (every 10 seconds)
   const cronJob = cron.schedule('* * * * *', () => {
+    try { if (typeof onTick === 'function') onTick(); } catch(_) {}
     checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
   }, {
     timezone: 'America/Chicago' // Adjust to your timezone

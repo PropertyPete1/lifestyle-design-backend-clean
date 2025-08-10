@@ -105,6 +105,22 @@ const AudienceActivityModel = mongoose.model('AudienceActivity', audienceActivit
 
 // API Routes
 
+// In-memory scheduler heartbeat (for quick smoke tests)
+const instanceId = Math.random().toString(36).slice(2, 10);
+const schedulerHeartbeat = {
+  instanceId,
+  lastTickAtISO: null,
+  ticksLastHour: 0,
+  serverTz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+};
+
+// Time debug utility
+function formatCTDateKey(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const parts = fmt.formatToParts(date).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+  return `${parts.year}${parts.month}${parts.day}`;
+}
+
 // Idempotent Post-Now debug endpoint: today counts + last 5 per platform
 try {
   const { DailyCounterModel } = require('./models/DailyCounter');
@@ -135,12 +151,38 @@ try {
   });
 } catch(_) {}
 
+// Heartbeat + time debug routes
+app.get('/api/scheduler/heartbeat', (req, res) => {
+  res.json(schedulerHeartbeat);
+});
+
+app.get('/api/time/debug', (req, res) => {
+  const now = new Date();
+  const nowUTC = now.toISOString();
+  const nowCT = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).format(now);
+  res.json({
+    serverTz: schedulerHeartbeat.serverTz,
+    nowUTC,
+    nowCT,
+    dateKeyCT: formatCTDateKey(now)
+  });
+});
+
 // Zillow Assistant routes removed per request
 
 // Start cron scheduler (America/Chicago)
 try {
   const { startCronScheduler } = require('./services/cronScheduler');
-  startCronScheduler(SchedulerQueueModel, SettingsModel);
+  // Reset ticks hourly
+  setInterval(() => { schedulerHeartbeat.ticksLastHour = 0; }, 60 * 60 * 1000);
+  startCronScheduler(SchedulerQueueModel, SettingsModel, () => {
+    schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
+    schedulerHeartbeat.ticksLastHour += 1;
+  });
 } catch (e) {
   console.warn('⚠️ Failed to start cron scheduler:', e.message);
 }
