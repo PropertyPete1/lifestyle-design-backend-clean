@@ -141,14 +141,19 @@ export async function computeOptimalTimes(limitPerPlatform: number = 5) {
     }
   }
 
-  // Fallback window 17..22 CT if not enough
-  const fallback: typeof slots = [];
+  // Fallback window 17..22 CT if not enough; merge into slots until limits satisfied
   if (slots.length < platforms.length * limit) {
     for (const platform of platforms) {
-      for (let h = 17; h <= 22; h++) {
-        const dt = toNextDate(dayOfWeekMonday0(new Date(new Date().toLocaleString('en-US', { timeZone: tz }))), h);
+      const existingForPlatform = slots.filter(s => s.platform === platform).length;
+      if (existingForPlatform >= limit) continue;
+      for (let h = 17; h <= 22 && slots.filter(s => s.platform === platform).length < limit; h++) {
+        const ctNow = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+        const dt = toNextDate(dayOfWeekMonday0(ctNow), h);
+        if (+dt <= +now) continue;
+        // Skip conflicts
+        if (existing.some(e => e.platform === platform && e.scheduledTime && Math.abs(new Date(e.scheduledTime).getTime() - dt.getTime()) < 30 * 60 * 1000)) continue;
         const localLabel = new Date(dt).toLocaleString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true });
-        if (+dt > +now) fallback.push({ platform, iso: dt.toISOString(), localLabel: `${localLabel} CT`, score: 50 });
+        slots.push({ platform, iso: dt.toISOString(), localLabel: `${localLabel} CT`, score: 50 });
       }
     }
   }
@@ -157,7 +162,7 @@ export async function computeOptimalTimes(limitPerPlatform: number = 5) {
     platforms,
     limitPerPlatform: limit,
     slots,
-    fallbackUsed: fallback.length > 0,
+    fallbackUsed: true,
     generatedAt: new Date().toISOString()
   };
 }

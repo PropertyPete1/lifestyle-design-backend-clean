@@ -129,6 +129,26 @@ async function ensureIndexes() {
 }
 
 // ============ Core Routes ============
+// In-memory heartbeat
+const instanceId = Math.random().toString(36).slice(2, 10);
+const schedulerHeartbeat: { instanceId: string; lastTickAtISO: string | null; ticksLastHour: number; serverTz: string } = {
+  instanceId,
+  lastTickAtISO: null,
+  ticksLastHour: 0,
+  serverTz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+};
+
+function formatCT(date = new Date()): { nowCT: string; dateKeyCT: string } {
+  const nowCT = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).format(date);
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date)
+    .reduce((acc: any, p: any) => (acc[p.type] = p.value, acc), {} as any);
+  const dateKeyCT = `${parts.year}-${parts.month}-${parts.day}`;
+  return { nowCT, dateKeyCT };
+}
 // Settings endpoints
 app.get('/api/settings', async (req, res) => {
   try {
@@ -226,7 +246,31 @@ async function handlePostNow(req, res) {
   }
 }
 
-app.post('/api/post-now', handlePostNow);
+// Canonical post-now: also supports queueItemIds to force-execute specific items via exactly-once
+app.post('/api/post-now', async (req, res) => {
+  const ids: string[] = Array.isArray(req.body?.queueItemIds) ? req.body.queueItemIds : [];
+  if (!ids.length) return handlePostNow(req, res);
+  try {
+    const settings = await SettingsModel.findOne({});
+    if (!settings) return res.status(400).json({ success: false, error: 'missing settings' });
+    const items = await SchedulerQueueModel.find({ _id: { $in: ids } }).lean();
+    const { executeQueueItemOnce } = require('./services/scheduler');
+    const results = [] as any[];
+    for (const item of items) {
+      try {
+        const r = await executeQueueItemOnce(item, settings);
+        results.push({ id: String(item._id), success: !!r.success, deduped: !!r.deduped, note: r.note || null, externalPostId: r.externalPostId || null });
+      } catch (e:any) {
+        results.push({ id: String(item._id), success: false, note: e?.message || 'error' });
+      }
+    }
+    const posted = results.filter(r => r.success).length;
+    const skipped = results.length - posted;
+    return res.json({ success: posted > 0, posted, skipped, results });
+  } catch (e:any) {
+    return res.status(500).json({ success: false, error: e?.message || 'post-now failed' });
+  }
+});
 app.post('/api/autopilot/manual-post', handlePostNow);
 app.post('/phase9/post-now', handlePostNow);
 app.post('/api/manual/post-now/:videoId', handlePostNow);
@@ -396,6 +440,44 @@ app.get('/api/heatmap/optimal-times', async (req, res) => {
   }
 });
 
+// Heartbeat + time debug
+app.get('/api/scheduler/heartbeat', (_req, res) => {
+  res.json(schedulerHeartbeat);
+});
+
+app.get('/api/time/debug', (_req, res) => {
+  const nowUTC = new Date().toISOString();
+  const { nowCT, dateKeyCT } = formatCT(new Date());
+  res.json({ serverTz: schedulerHeartbeat.serverTz, nowUTC, nowCT, dateKeyCT });
+});
+
+// Diagnostics: last-30 per platform (read-only)
+app.get('/api/diagnostics/instagram/last-30', async (_req, res) => {
+  try {
+    const s = await SettingsModel.findOne({}).lean();
+    const { scrapeInstagramEngagement, generateThumbnailHash } = require('./utils/instagramScraper');
+    const list = await scrapeInstagramEngagement(s.igBusinessId, s.instagramToken, 30);
+    const out:any[] = [];
+    for (const v of list) {
+      let vh = null;
+      try { vh = await generateThumbnailHash(v.thumbnailUrl || v.url || ''); } catch {}
+      out.push({ postedAt: v.timestamp ? new Date(v.timestamp) : null, visualHash: vh, captionNorm: (v.caption||'').toLowerCase(), audioKey: v.audioId || v.music_metadata?.music_product_id || null, durationSec: typeof v.duration==='number'?Math.round(v.duration):null });
+    }
+    res.json(out);
+  } catch (e:any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
+app.get('/api/diagnostics/youtube/last-30', async (_req, res) => {
+  try {
+    // Placeholder: without YouTube analytics scope to list recent uploads tied to channel, return []
+    res.json([]);
+  } catch (e:any) {
+    res.status(500).json({ error: e?.message || 'failed' });
+  }
+});
+
 // Dev-only similarity check
 app.post('/api/debug/similarity-check', async (req, res) => {
   try {
@@ -553,6 +635,17 @@ app.use((err, req, res, next) => {
 // Start server
 const startServer = async () => {
   await connectDB();
+  // Start cron and wire heartbeat
+  try {
+    const { startCronScheduler } = require('./services/cronScheduler');
+    setInterval(() => { schedulerHeartbeat.ticksLastHour = 0; }, 60 * 60 * 1000);
+    startCronScheduler(SchedulerQueueModel, SettingsModel, () => {
+      schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
+      schedulerHeartbeat.ticksLastHour += 1;
+    });
+  } catch (e:any) {
+    console.warn('⚠️ Cron start failed:', e?.message || e);
+  }
   
   app.listen(PORT, () => {
     console.log('🚀 [SERVER] Backend v2 running on port', PORT);

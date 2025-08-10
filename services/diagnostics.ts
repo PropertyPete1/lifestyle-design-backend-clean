@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import dayjs from 'dayjs';
 import { checkS3Object } from './s3';
 import { DailyCounterModel } from '../models/DailyCounter';
 import { PostModel } from '../models/Post';
@@ -29,7 +28,8 @@ async function getSchedulerStatus(): Promise<{ enabled: boolean; dailyLimit: num
   const settings: any = await SettingsModel.findOne({}).lean();
   const enabled = !!settings?.autopilotEnabled;
   const dailyLimit = Number(settings?.maxPosts || 5);
-  const today = dayjs().format('YYYYMMDD');
+  const now = new Date();
+  const today = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
   const ig = await DailyCounterModel.findOne({ platform: 'instagram', dateKey: today }).lean();
   const yt = await DailyCounterModel.findOne({ platform: 'youtube', dateKey: today }).lean();
   const postsToday = (ig?.count || 0) + (yt?.count || 0);
@@ -37,16 +37,22 @@ async function getSchedulerStatus(): Promise<{ enabled: boolean; dailyLimit: num
 }
 
 async function listPostsToday(): Promise<any[]> {
-  const start = dayjs().startOf('day').toDate();
-  const end = dayjs().endOf('day').toDate();
+  const start = new Date(); start.setHours(0,0,0,0);
+  const end = new Date(); end.setHours(23,59,59,999);
   const rows = await PostModel.find({ postedAt: { $gte: start, $lte: end }, status: 'posted' })
     .sort({ createdAt: -1 })
     .lean();
   return rows.map(r => ({ platform: r.platform, externalPostId: r.externalPostId, at: r.postedAt || r.createdAt }));
 }
 
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 export async function runAutopilotDiagnostics() {
-  const today = dayjs().startOf('day');
+  const today = startOfToday();
   const postsToday = await listPostsToday();
   const scheduler = await getSchedulerStatus();
   const queue = await getAutopilotQueue();
@@ -80,8 +86,11 @@ export async function runAutopilotDiagnostics() {
     reasons.push({ reason: 'NO_POSTS_TODAY' });
   }
 
+  const y = today.getFullYear();
+  const m = String(today.getMonth()+1).padStart(2,'0');
+  const d = String(today.getDate()).padStart(2,'0');
   return {
-    date: today.format('YYYY-MM-DD'),
+    date: `${y}-${m}-${d}`,
     postsToday: postsToday.length,
     scheduler,
     queueLength: queue.length,
