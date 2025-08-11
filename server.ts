@@ -39,7 +39,8 @@ app.use(cors({
     'http://localhost:3001', 
     'https://frontend-v2-sage.vercel.app',
     'https://lifestyle-design-social.vercel.app',
-    'https://lifestyle-design-frontend-clean.vercel.app'
+    'https://lifestyle-design-frontend-clean.vercel.app',
+    'https://lifestyle-design-frontend-v2.vercel.app'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

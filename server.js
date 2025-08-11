@@ -8,11 +8,23 @@ const mongoose = require('mongoose');
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://frontend-v2-sage.vercel.app',
+    'https://lifestyle-design-social.vercel.app',
+    'https://lifestyle-design-frontend-clean.vercel.app',
+    'https://lifestyle-design-frontend-v2.vercel.app'
+  ],
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization'],
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// MongoDB connection  
+// MongoDB connection
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb+srv://peterallen:RDSTonopah1992@cluster0.7vqin.mongodb.net/lifestyle-design-social?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI, {
@@ -949,7 +961,7 @@ app.get('/health', (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+  app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
       console.log('✅ AutoPilot system ready with Instagram API duplicate detection ACTIVE [v42]');
 });
