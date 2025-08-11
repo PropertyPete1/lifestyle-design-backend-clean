@@ -177,12 +177,21 @@ app.get('/api/time/debug', (req, res) => {
 // Start cron scheduler (America/Chicago)
 try {
   const { startCronScheduler } = require('./services/cronScheduler');
+  const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
   // Reset ticks hourly
   setInterval(() => { schedulerHeartbeat.ticksLastHour = 0; }, 60 * 60 * 1000);
   startCronScheduler(SchedulerQueueModel, SettingsModel, () => {
     schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
     schedulerHeartbeat.ticksLastHour += 1;
   });
+  // Fallback tick: ensure a heartbeat and due-post check every 60s even if cron missed
+  setInterval(() => {
+    try {
+      schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
+      schedulerHeartbeat.ticksLastHour += 1;
+      checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
+    } catch (_) {}
+  }, 60 * 1000);
 } catch (e) {
   console.warn('⚠️ Failed to start cron scheduler:', e.message);
 }
