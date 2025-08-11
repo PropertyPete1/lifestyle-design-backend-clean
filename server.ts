@@ -700,6 +700,19 @@ const startServer = async () => {
   } catch (e:any) {
     console.warn('⚠️ Cron start failed:', e?.message || e);
   }
+
+// Manual tick endpoint for Render Cron Jobs
+app.get('/api/scheduler/tick', async (_req, res) => {
+  try {
+    const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
+    schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
+    schedulerHeartbeat.ticksLastHour += 1;
+    await checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
+    res.json({ ok: true, tickedAt: schedulerHeartbeat.lastTickAtISO });
+  } catch (e:any) {
+    res.status(500).json({ ok: false, error: e?.message || 'tick failed' });
+  }
+});
   
   app.listen(PORT, () => {
     console.log('🚀 [SERVER] Backend v2 running on port', PORT);
