@@ -230,13 +230,30 @@ app.post('/api/autopilot/run', async (req, res) => {
     const settings = await SettingsModel.findOne();
     if (!settings) return res.status(400).json({ success:false, error: 'No settings found. Please configure your credentials first.' });
     if (!settings.autopilotEnabled) return res.status(400).json({ success:false, error: 'AutoPilot is disabled. Enable it in settings first.' });
-    const { runAutopilotOnce } = require('./services/autopilot');
+    const path = require('path');
+    let runAutopilotOnce;
+    try {
+      // When running from dist/server.js, services folder is one level up
+      ({ runAutopilotOnce } = require(path.resolve(__dirname, '..', 'services', 'autopilot')));
+    } catch (_) {
+      ({ runAutopilotOnce } = require('./services/autopilot'));
+    }
     const result = await runAutopilotOnce();
     settings.lastAutopilotRun = new Date(); await settings.save();
     return res.json({ success: true, scheduled: result.scheduled ?? result.processed ?? 0, skipped: result.skipped ?? 0, reasons: result.reasons || [] });
   } catch (error:any) {
     console.error('❌ [AUTOPILOT RUN ERROR]', error);
     res.status(500).json({ success:false, error: error?.message || 'AutoPilot run failed' });
+  }
+});
+
+// Clear autopilot queue (testing/ops)
+app.delete('/api/autopilot/queue', async (req, res) => {
+  try {
+    const result = await SchedulerQueueModel.deleteMany({});
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (e:any) {
+    res.status(500).json({ success: false, error: e?.message || 'Failed to clear queue' });
   }
 });
 
