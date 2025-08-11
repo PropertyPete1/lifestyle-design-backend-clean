@@ -105,6 +105,20 @@ if (!SchedulerQueueModel) {
   SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
 }
 
+// Audience Activity model (needed for heatmap/optimal-times)
+let AudienceActivityModel;
+try { AudienceActivityModel = mongoose.model('AudienceActivity'); } catch (_) {}
+if (!AudienceActivityModel) {
+  const audienceActivitySchema = new mongoose.Schema({
+    platform: { type: String, enum: ['instagram', 'youtube'], required: true },
+    hour: { type: Number, min: 0, max: 23, required: true },
+    dayOfWeek: { type: Number, min: 0, max: 6, required: true },
+    score: { type: Number, min: 0, max: 1, required: true },
+    raw: { type: mongoose.Schema.Types.Mixed }
+  }, { timestamps: true, collection: 'AudienceActivity' });
+  AudienceActivityModel = mongoose.model('AudienceActivity', audienceActivitySchema);
+}
+
 async function ensureIndexes() {
   try {
     if (PostModel) {
@@ -477,6 +491,19 @@ app.get('/api/diagnostics/youtube/last-30', async (_req, res) => {
     res.status(500).json({ error: e?.message || 'failed' });
   }
 });
+
+// Why-no-posts diagnostics
+try {
+  const { runAutopilotDiagnostics } = require('./services/diagnostics');
+  app.get('/api/diag/why-no-posts-today', async (_req, res) => {
+    try {
+      const out = await runAutopilotDiagnostics();
+      res.json(out);
+    } catch (e:any) {
+      res.status(500).json({ error: 'Diagnostic failed', details: e?.message || 'error' });
+    }
+  });
+} catch { }
 
 // Dev-only similarity check
 app.post('/api/debug/similarity-check', async (req, res) => {
