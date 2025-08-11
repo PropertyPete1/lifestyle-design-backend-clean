@@ -670,6 +670,15 @@ const startServer = async () => {
       schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
       schedulerHeartbeat.ticksLastHour += 1;
     });
+    // Fallback tick: ensure a heartbeat and due-post check every 60s even if cron missed
+    try {
+      const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
+      setInterval(() => {
+        schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
+        schedulerHeartbeat.ticksLastHour += 1;
+        checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
+      }, 60 * 1000);
+    } catch (_) {}
   } catch (e:any) {
     console.warn('⚠️ Cron start failed:', e?.message || e);
   }
