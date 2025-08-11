@@ -190,6 +190,7 @@ app.get('/api/time/debug', (req, res) => {
 try {
   const { startCronScheduler } = require('./services/cronScheduler');
   const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
+  const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
   // Reset ticks hourly
   setInterval(() => { schedulerHeartbeat.ticksLastHour = 0; }, 60 * 60 * 1000);
   startCronScheduler(SchedulerQueueModel, SettingsModel, () => {
@@ -207,6 +208,19 @@ try {
 } catch (e) {
   console.warn('⚠️ Failed to start cron scheduler:', e.message);
 }
+
+// Manual tick endpoint for Render Cron Jobs
+app.get('/api/scheduler/tick', async (req, res) => {
+  try {
+    const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
+    schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
+    schedulerHeartbeat.ticksLastHour += 1;
+    await checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
+    res.json({ ok: true, tickedAt: schedulerHeartbeat.lastTickAtISO });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || 'tick failed' });
+  }
+});
 
 // One-time migration: normalize legacy statuses to 'scheduled'
 (async () => {
