@@ -572,6 +572,17 @@ try {
   });
 } catch { }
 
+// Autopilot root-cause report
+app.get('/api/diag/autopilot-report', async (_req, res) => {
+  try {
+    const { collectAutopilotReport } = require('./services/diagAutopilot');
+    const report = await collectAutopilotReport();
+    return res.json(report);
+  } catch (e:any) {
+    return res.status(500).json({ ok: false, error: e?.message || 'failed to build report' });
+  }
+});
+
 // Dev-only similarity check
 app.post('/api/debug/similarity-check', async (req, res) => {
   try {
