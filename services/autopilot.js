@@ -177,12 +177,18 @@ async function runAutopilotOnce() {
   }
 
   const tz = settings.timeZone || 'America/Chicago';
+  const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
   for (const platform of platforms) {
     const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
     const need = Math.max(0, maxPosts - existing);
     const slotList = normalizeOptimalSlots(optimal, platform).slice(0, need);
     for (let i = 0; i < need; i++) {
-      const desired = slotList[i] ? new Date(slotList[i].iso) : null;
+      let desired = slotList[i] || null;
+      if (desired && !(desired instanceof Date)) {
+        if (typeof desired === 'string') desired = new Date(desired);
+        else if (desired?.iso) desired = new Date(desired.iso);
+        else if (desired?.ct || desired?.utc) desired = new Date(desired.ct || desired.utc);
+      }
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
       if (!candidate) { totalSkipped += 1; skipReasons.push('NO_UNIQUE_CANDIDATE'); break; }
 
@@ -212,7 +218,7 @@ async function runAutopilotOnce() {
       const finalCaption = hasCta ? body : `${ctaLine}\n\n${body}`.trim();
 
       // Schedule time: use fixed Austin local slots (9am, 1pm, 6pm CT)
-      const scheduledTime = desired || new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
+      const scheduledTime = isValidDate(desired) ? desired : new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
 
       // Create ONE queue item for the current platform only (avoid duplicates)
       // Compute dedupe signals
