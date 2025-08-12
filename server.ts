@@ -828,7 +828,14 @@ const startServer = async () => {
   await connectDB();
   // Start cron and wire heartbeat
   try {
-    const { startCronScheduler } = require('./services/cronScheduler');
+    // Resolve correctly when running from dist/server.js
+    const path = require('path');
+    let startCronScheduler: any;
+    try {
+      ({ startCronScheduler } = require(path.resolve(__dirname, '..', 'services', 'cronScheduler')));
+    } catch (_) {
+      ({ startCronScheduler } = require('./services/cronScheduler'));
+    }
     setInterval(() => { schedulerHeartbeat.ticksLastHour = 0; }, 60 * 60 * 1000);
     startCronScheduler(SchedulerQueueModel, SettingsModel, () => {
       schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
@@ -836,7 +843,13 @@ const startServer = async () => {
     });
     // Fallback tick: ensure a heartbeat and due-post check every 60s even if cron missed
     try {
-      const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
+      const path = require('path');
+      let checkAndExecuteDuePosts: any;
+      try {
+        ({ checkAndExecuteDuePosts } = require(path.resolve(__dirname, '..', 'services', 'cronScheduler')));
+      } catch (_) {
+        ({ checkAndExecuteDuePosts } = require('./services/cronScheduler'));
+      }
       setInterval(() => {
         schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
         schedulerHeartbeat.ticksLastHour += 1;
@@ -850,7 +863,13 @@ const startServer = async () => {
 // Manual tick endpoint for Render Cron Jobs
 app.get('/api/scheduler/tick', async (_req, res) => {
   try {
-    const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
+    const path = require('path');
+    let checkAndExecuteDuePosts: any;
+    try {
+      ({ checkAndExecuteDuePosts } = require(path.resolve(__dirname, '..', 'services', 'cronScheduler')));
+    } catch (_) {
+      ({ checkAndExecuteDuePosts } = require('./services/cronScheduler'));
+    }
     schedulerHeartbeat.lastTickAtISO = new Date().toISOString();
     schedulerHeartbeat.ticksLastHour += 1;
     await checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
