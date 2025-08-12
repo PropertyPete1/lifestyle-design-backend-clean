@@ -953,6 +953,123 @@ app.get('/api/test/youtube', async (req, res) => {
   }
 });
 
+// Diagnostics: Autopilot root-cause report (read-only)
+app.get('/api/diag/autopilot-report', async (req, res) => {
+  try {
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const SettingsModel = mongoose.model('SettingsClean');
+    const SchedulerQueueModel = mongoose.model('SchedulerQueue');
+    let DailyCounterModel = null; try { DailyCounterModel = require('./models/DailyCounter').DailyCounterModel; } catch(_) {}
+    let LockModel = null; try { LockModel = require('./models/Lock').LockModel; } catch(_) {}
+
+    const settingsDoc = await SettingsModel.findOne({}).lean().catch(() => null);
+    const settings = {
+      autopilotEnabled: !!(settingsDoc && settingsDoc.autopilotEnabled),
+      maxPosts: Number(settingsDoc && settingsDoc.maxPosts || 0),
+      repostDelay: Number(settingsDoc && settingsDoc.repostDelay || 0),
+      postTime: (settingsDoc && settingsDoc.timeZone) || 'America/Chicago',
+      dailyLimit: Number(settingsDoc && settingsDoc.maxPosts || 0)
+    };
+
+    const total = await SchedulerQueueModel.countDocuments({}).catch(() => 0);
+    const dueNow = await SchedulerQueueModel.countDocuments({ status: { $in: ['scheduled','pending'] }, scheduledTime: { $lte: now } }).catch(() => 0);
+    const postingNow = await SchedulerQueueModel.countDocuments({ status: { $in: ['processing'] } }).catch(() => 0);
+    const last10Docs = await SchedulerQueueModel.find({}).sort({ updatedAt: -1 }).limit(10).lean().catch(() => []);
+    const last10 = (last10Docs || []).map(it => ({
+      _id: String(it._id),
+      platform: it.platform,
+      status: it.status,
+      lockedBy: it.lockedBy || null,
+      lockedAtIso: it.lockedAt ? new Date(it.lockedAt).toISOString() : null,
+      postedAtIso: it.postedAt ? new Date(it.postedAt).toISOString() : null,
+      visualHash: it.visualHash || it.thumbnailHash || null,
+    }));
+
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const samples = await SchedulerQueueModel.find({ status: { $in: ['posted','completed'] }, postedAt: { $gte: oneHourAgo } })
+      .sort({ postedAt: -1 }).limit(10).lean().catch(() => []);
+    const ig = await SchedulerQueueModel.countDocuments({ platform: 'instagram', status: { $in: ['posted','completed'] }, postedAt: { $gte: oneHourAgo } }).catch(() => 0);
+    const yt = await SchedulerQueueModel.countDocuments({ platform: 'youtube', status: { $in: ['posted','completed'] }, postedAt: { $gte: oneHourAgo } }).catch(() => 0);
+    const postsLastHour = {
+      count: (ig + yt),
+      byPlatform: { instagram: ig, youtube: yt },
+      samples: (samples || []).map(s => ({ _id: String(s._id), platform: s.platform, postedAtIso: s.postedAt ? new Date(s.postedAt).toISOString() : null }))
+    };
+
+    let countersToday = { instagram: 0, youtube: 0, total: 0 };
+    if (DailyCounterModel) {
+      try {
+        const d = new Date();
+        const dateKey = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+        const rows = await DailyCounterModel.find({ dateKey }).lean();
+        const igC = rows.find(r => r.platform === 'instagram')?.count || 0;
+        const ytC = rows.find(r => r.platform === 'youtube')?.count || 0;
+        countersToday = { instagram: igC, youtube: ytC, total: igC + ytC };
+      } catch {}
+    } else {
+      const start = new Date(now); start.setHours(0,0,0,0);
+      const end = new Date(now); end.setHours(23,59,59,999);
+      const [igT, ytT] = await Promise.all([
+        SchedulerQueueModel.countDocuments({ platform: 'instagram', status: { $in: ['posted','completed'] }, postedAt: { $gte: start, $lte: end } }).catch(() => 0),
+        SchedulerQueueModel.countDocuments({ platform: 'youtube', status: { $in: ['posted','completed'] }, postedAt: { $gte: start, $lte: end } }).catch(() => 0)
+      ]);
+      countersToday = { instagram: igT, youtube: ytT, total: igT + ytT };
+    }
+
+    let schedulerLock = null, postOnceLocks = 0, activeLocks = [];
+    if (LockModel) {
+      try {
+        const locks = await LockModel.find({}).limit(50).lean();
+        postOnceLocks = locks.length;
+        const sl = locks.find(l => String(l.key || '').includes('scheduler')) || null;
+        if (sl) schedulerLock = { holder: sl.key || null, expiresIso: sl.expiresAt ? new Date(sl.expiresAt).toISOString() : null };
+      } catch {}
+    }
+    try {
+      const procs = await SchedulerQueueModel.find({ status: { $in: ['processing'] } }).limit(10).lean();
+      activeLocks = (procs || []).map(p => ({ id: String(p._id), platform: p.platform, status: p.status, scheduledTime: p.scheduledTime }));
+    } catch {}
+
+    // Scheduler heartbeat via internal HTTP
+    let scheduler = { running: false, lastTickIso: null, tickEverySec: 60, activeLocks };
+    try {
+      const port = process.env.PORT || '10000';
+      const base = `http://127.0.0.1:${port}`;
+      const hb = await fetch(`${base}/api/scheduler/heartbeat`).then(r => r.json()).catch(() => null);
+      if (hb && hb.lastTickAtISO) {
+        scheduler.running = true;
+        scheduler.lastTickIso = hb.lastTickAtISO;
+      }
+    } catch {}
+
+    // Render info via /health
+    let render = {};
+    try {
+      const port = process.env.PORT || '10000';
+      const base = `http://127.0.0.1:${port}`;
+      const h = await fetch(`${base}/health`).then(r => r.json()).catch(() => null);
+      if (h) render = { version: h.version || null, buildTime: h.buildTime || null };
+    } catch {}
+
+    const instanceId = Math.random().toString(36).slice(2, 10);
+    return res.json({
+      nowIso,
+      instanceId,
+      env: { NODE_ENV: process.env.NODE_ENV, RENDER: (process.env.RENDER || process.env.RENDER_SERVICE_ID) ? 'true' : 'false' },
+      settings,
+      scheduler,
+      queue: { total, dueNow, postingNow, last10 },
+      postsLastHour,
+      countersToday,
+      locks: { schedulerLock, postOnceLocks },
+      render
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || 'failed to build report' });
+  }
+});
+
 // POST NOW - Step-by-step flow with visual hash + caption similarity protection
 // Non-blocking trigger: enqueue a background job and respond immediately
 app.post('/api/postNow', async (req, res) => {
