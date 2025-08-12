@@ -985,6 +985,54 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, nowUTC: new Date().toISOString(), version: VERSION, builtAt: BUILT_AT, pid: process.pid });
 });
 
+// Heatmap endpoints with safe fallbacks
+app.get('/api/heatmap/weekly', async (_req, res) => {
+  try {
+    const { computeWeeklyHeatmap } = require('./services/heatmap');
+    const data = await computeWeeklyHeatmap();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to compute weekly heatmap' });
+  }
+});
+
+app.get('/api/heatmap/optimal-times', async (req, res) => {
+  try {
+    const { computeOptimalTimes } = require('./services/heatmap');
+    const limit = Number(req.query.limit || 5);
+    const data = await computeOptimalTimes(limit);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to compute optimal times' });
+  }
+});
+
+// Scheduler status used by UI
+app.get('/api/scheduler/status', async (_req, res) => {
+  try {
+    const now = new Date();
+    const startOfDay = new Date(now); startOfDay.setHours(0,0,0,0);
+    const endOfDay = new Date(now); endOfDay.setHours(23,59,59,999);
+    const queueSize = await SchedulerQueueModel.countDocuments({ status: { $in: ['scheduled','processing','pending'] } });
+    const [igToday, ytToday] = await Promise.all([
+      SchedulerQueueModel.countDocuments({ platform: 'instagram', status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } }),
+      SchedulerQueueModel.countDocuments({ platform: 'youtube', status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } })
+    ]);
+    const settingsDoc = await SettingsModel.findOne({});
+    const limit = Number(settingsDoc?.maxPosts || 5);
+    const nextRun = new Date(Date.now()+60*1000).toISOString();
+    res.json({
+      queueSize,
+      today: { instagram: igToday, youtube: ytToday },
+      nextRun,
+      instagram: { used: igToday, limit },
+      youtube: { used: ytToday, limit }
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get scheduler status' });
+  }
+});
+
 // Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
