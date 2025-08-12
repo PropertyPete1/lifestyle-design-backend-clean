@@ -193,9 +193,6 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
 
           console.log(`✅ [CRON] Successfully posted to ${result.platform}: ${result.url}`);
           
-          // 🤖 Smart Autopilot Refill: Check if queue needs more videos immediately after success
-          await triggerAutopilotRefill(SchedulerQueueModel, SettingsModel);
-          
         } else {
           const currentRetryCount = (post.retryCount || 0) + 1;
           
