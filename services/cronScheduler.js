@@ -1,3 +1,14 @@
+// Minimal safe stub for Render: prevents boot failure; does NOT schedule anything
+function startCronScheduler(/* SchedulerQueueModel, SettingsModel, onTick */) {
+  // no-op
+}
+
+async function checkAndExecuteDuePosts(/* SchedulerQueueModel, SettingsModel */) {
+  // no-op
+}
+
+module.exports = { startCronScheduler, checkAndExecuteDuePosts };
+
 /**
  * Cron Scheduler Service - Checks queue every minute and executes due posts
  * This is the missing piece that actually runs posts at their scheduled times

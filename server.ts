@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+let fetchFn: any;
+try { fetchFn = (global as any).fetch || require('node-fetch'); } catch { fetchFn = require('node-fetch'); }
 
 // Settings Model
 const settingsSchema = new mongoose.Schema({
@@ -388,65 +390,92 @@ app.post('/api/test/validate-apis', async (req, res) => {
 
 console.log('✅ AutoPilot and core routes registered');
 
-// Analytics services (with error handling for Render deployment)
-let instagramAnalytics, youtubeAnalytics;
-try {
-  instagramAnalytics = require('./services/instagramAnalytics');
-  console.log('✅ Instagram analytics service loaded');
-} catch (error) {
-  console.log('⚠️ Instagram analytics service failed to load:', error.message);
-  instagramAnalytics = null;
+// ---- Minimal analytics for dashboard (inline, safe) ----
+function formatCTKey(d: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' })
+    .formatToParts(d)
+    .reduce((acc: any, p: any) => (acc[p.type] = p.value, acc), {} as any);
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-try {
-  youtubeAnalytics = require('./services/youtubeAnalytics');
-  console.log('✅ YouTube analytics service loaded');
-} catch (error) {
-  console.log('⚠️ YouTube analytics service failed to load:', error.message);
-  youtubeAnalytics = null;
-}
-
-// Unified dashboard analytics endpoint
-app.get('/api/analytics', async (req, res) => {
+app.get('/api/analytics', async (_req, res) => {
   try {
-    const settings = await SettingsModel.findOne();
-    if (!settings) {
-      return res.json({
-        instagram: { followers: 0, reach: 0, engagementRate: 0, autopilotEnabled: false },
-        youtube: { subscribers: 0, reach: 0, autopilotEnabled: false },
-        upcomingPosts: [],
-        credentials: {}
-      });
+    const settings: any = await SettingsModel.findOne().lean();
+    const notes: string[] = [];
+
+    const igConnected = !!(settings?.instagramToken && settings?.igBusinessId);
+    const ytConnected = !!(settings?.youtubeAccessToken && settings?.youtubeChannelId);
+
+    // 14-day CT labels
+    const days = 14;
+    const labels: string[] = [];
+    const igSeries: number[] = [];
+    const ytSeries: number[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      labels.push(formatCTKey(d));
+      igSeries.push(0);
+      ytSeries.push(0);
     }
 
-    const [igData, ytData] = await Promise.allSettled([
-      instagramAnalytics ? instagramAnalytics.getInstagramAnalytics(SettingsModel) : Promise.resolve({ followers: 0, reach: 0, engagementRate: 0 }),
-      youtubeAnalytics ? youtubeAnalytics.getYouTubeAnalytics(SettingsModel) : Promise.resolve({ subscribers: 0, reach: 0 })
-    ]);
+    // Best-effort live counts
+    let igFollowers: number | null = null;
+    let ytSubscribers: number | null = null;
+    let igLast: string | null = null;
+    let ytLast: string | null = null;
 
-    res.json({
-      instagram: {
-        followers: igData.status === 'fulfilled' ? igData.value.followers : 0,
-        reach: igData.status === 'fulfilled' ? igData.value.reach : 0,
-        engagementRate: igData.status === 'fulfilled' ? igData.value.engagementRate : 0,
-        autopilotEnabled: settings.autopilotEnabled || false
-      },
-      youtube: {
-        subscribers: ytData.status === 'fulfilled' ? ytData.value.subscribers : 0,
-        reach: ytData.status === 'fulfilled' ? ytData.value.reach : 0,
-        autopilotEnabled: settings.autopilotEnabled || false
-      },
-      upcomingPosts: [],
-      credentials: process.env.NODE_ENV === 'development' ? {
-        instagramToken: settings.instagramToken ? '***' : null,
-        youtubeToken: settings.youtubeAccessToken ? '***' : null,
-        s3Bucket: settings.s3BucketName || null,
-        mongoUri: settings.mongoURI ? '***' : null
-      } : {}
+    if (!igConnected) notes.push('Instagram not connected (token or business ID missing).');
+    if (!ytConnected) notes.push('YouTube not connected (token or channel ID missing).');
+
+    if (igConnected) {
+      try {
+        const url = `https://graph.facebook.com/v19.0/${settings.igBusinessId}?fields=followers_count&access_token=${settings.instagramToken}`;
+        const r = await fetchFn(url);
+        if (r.ok) {
+          const j = await r.json();
+          igFollowers = typeof j?.followers_count === 'number' ? j.followers_count : null;
+          igLast = new Date().toISOString();
+        } else {
+          notes.push(`Instagram API ${r.status}`);
+        }
+      } catch (e: any) {
+        notes.push(`Instagram API error: ${e?.message || 'error'}`);
+      }
+    }
+
+    if (ytConnected) {
+      try {
+        const r = await fetchFn(`https://www.googleapis.com/youtube/v3/channels?part=statistics&mine=true&access_token=${settings.youtubeAccessToken}`);
+        if (r.ok) {
+          const j = await r.json();
+          const stats = j?.items?.[0]?.statistics;
+          const sub = stats?.subscriberCount ? Number(stats.subscriberCount) : NaN;
+          ytSubscribers = Number.isFinite(sub) ? sub : null;
+          ytLast = new Date().toISOString();
+        } else {
+          notes.push(`YouTube API ${r.status}`);
+        }
+      } catch (e: any) {
+        notes.push(`YouTube API error: ${e?.message || 'error'}`);
+      }
+    }
+
+    const combined = igSeries.map((v, i) => v + (ytSeries[i] || 0));
+
+    return res.json({
+      instagram: { connected: igConnected, followers: igFollowers, engagementRate: null, lastSync: igLast },
+      youtube:   { connected: ytConnected, subscribers: ytSubscribers, avgViews: null, lastSync: ytLast },
+      timeseries: { labels, instagram: igSeries, youtube: ytSeries, combined },
+      notes
     });
-  } catch (error) {
-    console.error('❌ [ANALYTICS ERROR]', error);
-    res.status(500).json({ error: 'Failed to fetch analytics' });
+  } catch (err: any) {
+    console.error('Analytics error', err);
+    return res.json({
+      instagram: { connected: false, followers: null, engagementRate: null, lastSync: null },
+      youtube:   { connected: false, subscribers: null, avgViews: null, lastSync: null },
+      timeseries: { labels: [], instagram: [], youtube: [], combined: [] },
+      notes: ['Analytics failed; returning empty data.']
+    });
   }
 });
 
@@ -610,11 +639,9 @@ app.post('/api/manual/schedule/:videoId', async (req, res) => {
 // Activity feed endpoints (for dashboard)
 app.get('/api/activity/feed', async (req, res) => {
   try {
-    // Mock activity data for now
-    res.json([
-      { id: 1, type: 'post', platform: 'instagram', status: 'scheduled', timestamp: new Date() },
-      { id: 2, type: 'post', platform: 'youtube', status: 'posted', timestamp: new Date() }
-    ]);
+    // Minimal empty dataset shape compatible with frontend expectations
+    const data = [] as any[];
+    res.json({ data });
   } catch (error) {
     console.error('❌ [ACTIVITY FEED ERROR]', error);
     res.status(500).json({ error: 'Failed to fetch activity feed' });
@@ -634,7 +661,126 @@ app.get('/api/events/recent', async (req, res) => {
   }
 });
 
-// Zillow Assistant routes removed per request
+// Lightweight chart/status endpoint for dashboard waves/controls
+app.get('/api/chart/status', async (_req, res) => {
+  try {
+    const settings: any = await SettingsModel.findOne();
+    // Count today's posted items by platform for basic activity
+    const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+    const endOfDay = new Date(); endOfDay.setHours(23,59,59,999);
+    const [igToday, ytToday, lastPosted] = await Promise.all([
+      SchedulerQueueModel.countDocuments({ platform: 'instagram', status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } }),
+      SchedulerQueueModel.countDocuments({ platform: 'youtube', status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } }),
+      SchedulerQueueModel.findOne({ status: { $in: ['posted','completed'] } }).sort({ postedAt: -1 }).select('postedAt')
+    ]);
+
+    // Simple engagement proxy from AudienceActivity if available
+    let engagementScore = 0.5;
+    try {
+      const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      const recent = await AudienceActivityModel.aggregate([
+        { $match: { createdAt: { $gte: since } } },
+        { $group: { _id: null, avg: { $avg: '$score' } } }
+      ]);
+      engagementScore = Number(((recent?.[0]?.avg) || 0.5).toFixed(3));
+    } catch {}
+
+    return res.json({
+      engagementScore,
+      newHighScore: false,
+      lastPostTime: lastPosted?.postedAt || null,
+      autopilotRunning: !!settings?.autopilotEnabled,
+      settings: { dailyPostLimit: Number(settings?.maxPosts || 3) },
+      platformData: {
+        instagram: { active: !!settings?.autopilotEnabled, todayPosts: igToday, reach: 0 },
+        youtube: { active: !!settings?.autopilotEnabled, todayPosts: ytToday, reach: 0 }
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to get chart status' });
+  }
+});
+
+// Audience Heatmap (weekly)
+app.get('/api/audience-heatmap', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 30);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const rows = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avgScore: { $avg: '$score' }, count: { $sum: 1 } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgScore: 1, count: 1, _id: 0 } },
+    ]);
+
+    const grid = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ score: 0, reach: 0, level: 'minimal', count: 0 })));
+    const classify = (reach: number) => {
+      if (reach >= 851) return 'extreme';
+      if (reach >= 601) return 'very-high';
+      if (reach >= 401) return 'high';
+      if (reach >= 251) return 'medium';
+      if (reach >= 101) return 'low';
+      return 'minimal';
+    };
+    rows.forEach((r: any) => {
+      const d = Math.max(0, Math.min(6, r.dayOfWeek));
+      const h = Math.max(0, Math.min(23, r.hour));
+      const reach = Math.round((r.avgScore || 0) * 1000);
+      grid[d][h] = { score: Number((r.avgScore || 0).toFixed(3)), reach, level: classify(reach), count: r.count };
+    });
+
+    res.json({ platform, daysBack, grid });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to build audience heatmap' });
+  }
+});
+
+// Optimal Post Times (top 3)
+app.get('/api/optimal-times', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 7);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    const agg = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avgScore: { $avg: '$score' }, count: { $sum: 1 } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avgScore: 1, count: 1, _id: 0 } },
+    ]);
+    const weekdayBonus = (d: number) => (d >= 1 && d <= 5 ? 1.05 : 1);
+    const scored = agg.map((r: any) => ({ dayOfWeek: r.dayOfWeek, hour: r.hour, score: (r.avgScore || 0) * weekdayBonus(r.dayOfWeek) }));
+    scored.sort((a, b) => b.score - a.score);
+    const top3 = scored.slice(0, 3).map((s) => {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const hh = String(s.hour).padStart(2, '0');
+      return `${dayNames[s.dayOfWeek]} ${hh}:00`;
+    });
+    res.json({ platform, top3 });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to compute optimal times' });
+  }
+});
+
+// Audience AI/Template Summary
+app.get('/api/audience-summary', async (req, res) => {
+  try {
+    const platform = (req.query.platform || 'instagram').toString();
+    const daysBack = Number(req.query.days || 14);
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    const activity = await AudienceActivityModel.aggregate([
+      { $match: { platform, createdAt: { $gte: since } } },
+      { $group: { _id: { d: '$dayOfWeek', h: '$hour' }, avg: { $avg: '$score' } } },
+      { $project: { dayOfWeek: '$_id.d', hour: '$_id.h', avg: 1, _id: 0 } },
+      { $sort: { avg: -1 } },
+    ]);
+    const top = activity.slice(0, 3);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const best = top.map((t: any) => `${dayNames[t.dayOfWeek]} ${String(t.hour).padStart(2, '0')}:00`);
+    res.json({ platform, summary: `Peak audience windows: ${best.join(', ')}`, topTimes: best, matched: 0 });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate audience summary' });
+  }
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -713,6 +859,35 @@ app.get('/api/scheduler/tick', async (_req, res) => {
     res.status(500).json({ ok: false, error: e?.message || 'tick failed' });
   }
 });
+  
+  app.listen(PORT, () => {
+    console.log('🚀 [SERVER] Backend v2 running on port', PORT);
+    console.log('📋 [SERVER] Available endpoints:');
+    console.log('   GET  /health - Health check');
+    console.log('   GET  /api/settings - Load settings (DIRECT)');
+    console.log('   POST /api/settings - Save settings (DIRECT)');
+  });
+};
+
+startServer().catch(console.error);
+    service: 'backend-v2',
+    path: req.originalUrl
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('❌ [SERVER ERROR]', err);
+  res.status(500).json({
+    error: 'Internal server error',
+    service: 'backend-v2',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
+
+// Start server
+const startServer = async () => {
+  await connectDB();
   
   app.listen(PORT, () => {
     console.log('🚀 [SERVER] Backend v2 running on port', PORT);

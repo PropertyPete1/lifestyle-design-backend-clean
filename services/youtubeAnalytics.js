@@ -1,3 +1,16 @@
+// Minimal safe stub for Render: provides getYouTubeAnalytics without external deps
+module.exports = {
+  async getYouTubeAnalytics(/* SettingsModel */) {
+    return {
+      subscribers: 0,
+      reach: 0,
+      videos: 0,
+      engagementRate: 0,
+      lastUpdated: new Date().toISOString()
+    };
+  }
+};
+
 /**
  * YouTube Analytics Service - Real API Implementation
  * Fetches actual subscriber count, views, and growth metrics

@@ -1,3 +1,16 @@
+// Minimal safe stub for Render: provides getInstagramAnalytics without external deps
+module.exports = {
+  async getInstagramAnalytics(/* SettingsModel */) {
+    return {
+      followers: 0,
+      reach: 0,
+      engagementRate: 0,
+      isPosting: false,
+      lastUpdated: new Date().toISOString()
+    };
+  }
+};
+
 /**
  * Instagram Analytics Service - Real API Implementation
  * Fetches actual follower count, engagement, and growth metrics
