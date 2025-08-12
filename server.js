@@ -34,6 +34,22 @@ mongoose.connect(MONGO_URI, {
 .then(() => console.log('✅ MongoDB connected'))
 .catch(err => console.error('❌ MongoDB connection error:', err));
 
+// Ensure critical DB indexes (best-effort, non-blocking)
+async function ensureDbIndexes() {
+  try {
+    const db = mongoose.connection.db;
+    if (!db) return;
+    try { await db.collection('PostingLocks').createIndex({ key: 1 }, { unique: true, name: 'key_1' }); } catch {}
+    try { await db.collection('Posts').createIndex({ platform: 1, sourceId: 1 }, { unique: true, sparse: true, name: 'platform_source_unique' }); } catch {}
+    try { await db.collection('Posts').createIndex({ status: 1, postTime: 1 }, { name: 'status_postTime' }); } catch {}
+    try { await db.collection('Posts').createIndex({ postedAt: 1 }, { name: 'postedAt_1' }); } catch {}
+    console.log('✅ [INDEX] DB indexes ensured');
+  } catch (e) {
+    console.warn('⚠️ [INDEX] ensureDbIndexes failed:', e?.message || e);
+  }
+}
+setTimeout(() => { ensureDbIndexes().catch(()=>{}); }, 0);
+
 // Settings Model
 const settingsSchema = new mongoose.Schema({
   instagramToken: String,
@@ -1166,6 +1182,21 @@ app.post('/api/diag/clear-sched-lock', async (_req, res) => {
     return res.json({ success: true, deleted });
   } catch (e) {
     return res.status(500).json({ success: false, error: e?.message || 'clear lock failed' });
+  }
+});
+
+// --- DIAG: Reset daily counters (today) ---
+app.post('/api/diag/reset-counters', async (req, res) => {
+  try {
+    const scope = String(req.query?.scope || 'today');
+    let DailyCounterModel = null; try { ({ DailyCounterModel } = require('./models/DailyCounter')); } catch {}
+    if (scope !== 'today') return res.json({ ok: false, error: 'unsupported scope' });
+    if (!DailyCounterModel) return res.json({ ok: true, reset: 'today', note: 'no DailyCounter model' });
+    const now = new Date(); const key = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    await DailyCounterModel.deleteMany({ dateKey: key });
+    return res.json({ ok: true, reset: 'today' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'failed to reset counters' });
   }
 });
 
