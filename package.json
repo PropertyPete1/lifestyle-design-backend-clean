@@ -1,6 +1,6 @@
 {
   "name": "lifestyle-design-backend-v2-clean",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Backend v2 for Lifestyle Design Auto Poster",
   "main": "dist/server.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "copy:server": "mkdir -p dist && ( [ -f server.js ] && cp -f server.js dist/server.js || true )",
     "copy:runtime": "mkdir -p dist/services dist/utils dist/routes dist/models dist/providers && ( [ -d services ] && cp -R services/* dist/services/ || true ) && ( [ -d utils ] && cp -R utils/* dist/utils/ || true ) && ( [ -d routes ] && cp -R routes/* dist/routes/ || true ) && ( [ -d models ] && cp -R models/* dist/models/ || true ) && ( [ -d providers ] && cp -R providers/* dist/providers/ || true )",
     "write:meta": "node -e \"const fs=require('fs'); const cp=require('child_process'); const dir='dist'; if(!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true}); const commit=(process.env.RENDER_GIT_COMMIT||process.env.COMMIT||(()=>{try{return cp.execSync('git rev-parse --short HEAD',{stdio:['ignore','pipe','ignore']}).toString().trim()}catch(_){return 'unknown'}}))(); const ts=new Date().toISOString(); fs.writeFileSync('dist/VERSION', commit+'\\n'); fs.writeFileSync('dist/BUILD_TIME', ts+'\\n'); console.log('Wrote VERSION=%s BUILD_TIME=%s', commit, ts);\"",
-    "verify:dist": "node -e \"const fs=require('fs'); const must=['dist/server.js','dist/services/autopilot.js','dist/services/postNow.js','dist/services/candidateBuilder.js','dist/services/heatmap.js','dist/VERSION','dist/BUILD_TIME']; const missing=must.filter(p=>!fs.existsSync(p)); if(missing.length){console.error('❌ Missing in dist:',missing.join(', ')); process.exit(1)} else {console.log('✅ dist verified');}\"",
+    "verify:dist": "node -e \"const fs=require('fs'); const must=['dist/server.js','dist/services/autopilot.js','dist/services/postNow.js','dist/services/candidateBuilder.js','dist/services/heatmap.js','dist/VERSION','dist/BUILD_TIME']; const missing=must.filter(p=>!fs.existsSync(p)); if(missing.length){console.error('\u274c Missing in dist:',missing.join(', ')); process.exit(1)} else {console.log('\u2705 dist verified');}\"",
     "start": "node dist/server.js",
     "dev": "ts-node --transpile-only server.ts",
     "postinstall": "npm run build",
