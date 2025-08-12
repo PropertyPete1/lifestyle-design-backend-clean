@@ -381,7 +381,13 @@ app.get('/api/autopilot/queue', async (req, res) => {
 app.post('/api/autopilot/run', async (req, res) => {
   try {
     console.log('🚀 [AUTOPILOT] Triggered manual autopilot run');
-    const { runAutopilotOnce } = require('./services/autopilot');
+    const path = require('path');
+    let runAutopilotOnce;
+    try {
+      ({ runAutopilotOnce } = require(path.resolve(__dirname, '..', 'services', 'autopilot')));
+    } catch (_) {
+      ({ runAutopilotOnce } = require('./services/autopilot'));
+    }
     // Respond fast; run in background
     setImmediate(async () => {
       try {
