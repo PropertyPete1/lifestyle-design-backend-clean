@@ -1,13 +1,5 @@
 // Minimal safe stub for Render: prevents boot failure; does NOT schedule anything
-function startCronScheduler(/* SchedulerQueueModel, SettingsModel, onTick */) {
-  // no-op
-}
-
-async function checkAndExecuteDuePosts(/* SchedulerQueueModel, SettingsModel */) {
-  // no-op
-}
-
-module.exports = { startCronScheduler, checkAndExecuteDuePosts };
+// Note: Below we export real implementations with locking and caps
 
 /**
  * Cron Scheduler Service - Checks queue every minute and executes due posts
@@ -17,6 +9,15 @@ module.exports = { startCronScheduler, checkAndExecuteDuePosts };
 const cron = require('node-cron');
 const { executeScheduledPost } = require('./postExecutor');
 const fetch = require('node-fetch');
+const { acquireLock, releaseLock } = require('./locks');
+const mongoose = require('mongoose');
+let SchedulerQueueModel;
+try { SchedulerQueueModel = mongoose.model('SchedulerQueue'); } catch (_) {
+  try {
+    const schema = new mongoose.Schema({}, { strict: false, timestamps: true, collection: 'SchedulerQueue' });
+    SchedulerQueueModel = mongoose.model('SchedulerQueue', schema);
+  } catch {}
+}
 
 // ✅ Timezone-safe post due checker
 function isPostDueNow(scheduledTime) {
@@ -100,6 +101,21 @@ async function triggerAutopilotRefill(SchedulerQueueModel, SettingsModel) {
  */
 async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
   try {
+    // Kill switch
+    try {
+      const s = await SettingsModel.findOne({});
+      if (s && s.autopilotEnabled === false) {
+        console.log('⏸️ [CRON] Autopilot paused, skip tick');
+        return;
+      }
+    } catch {}
+
+    // Distributed single-run lock
+    const held = await acquireLock('scheduler:tick', 55);
+    if (!held.ok) {
+      console.log('🔒 [CRON] Another instance is running:', held.holder);
+      return;
+    }
     console.log('⏰ [CRON] Checking for due posts...');
     
     // Get current time
@@ -127,19 +143,35 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
       return;
     }
     
-    // Execute each due post
+    // Enforce simple per-hour caps per platform (defaults)
+    const perHourCap = Number(process.env.AUTOPILOT_MAX_PER_HOUR || 6);
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const counts = { instagram: 0, youtube: 0 };
+    try {
+      counts.instagram = await SchedulerQueueModel.countDocuments({ platform: 'instagram', status: { $in: ['posted','completed'] }, postedAt: { $gte: hourAgo } });
+      counts.youtube   = await SchedulerQueueModel.countDocuments({ platform: 'youtube',   status: { $in: ['posted','completed'] }, postedAt: { $gte: hourAgo } });
+    } catch {}
+
+    // Execute each due post with caps and atomic claim
     for (const post of duePosts) {
+      if (post.platform === 'instagram' && counts.instagram >= perHourCap) break;
+      if (post.platform === 'youtube'   && counts.youtube   >= perHourCap) break;
       try {
         console.log(`🚀 [CRON] Executing post ${post._id} (${post.platform}) - was due at ${post.scheduledTime}`);
-        
-        // Mark as processing to prevent duplicate execution
-        await SchedulerQueueModel.updateOne(
-          { _id: post._id },
-          { status: 'processing' }
+        // Atomically claim the item
+        const now = new Date();
+        const claimed = await SchedulerQueueModel.findOneAndUpdate(
+          { _id: post._id, status: 'scheduled' },
+          { $set: { status: 'processing', lockedAt: now } },
+          { new: true }
         );
+        if (!claimed) {
+          console.log('⚠️ [CRON] Skip, not claimed', String(post._id));
+          continue;
+        }
         
         // Execute the post
-        const result = await executeScheduledPost(post, settings);
+        const result = await executeScheduledPost(claimed, settings);
         
         if (result.success) {
           // Mark as completed and log success
@@ -152,7 +184,9 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
               postUrl: result.url
             }
           );
-          
+          if (post.platform === 'instagram') counts.instagram += 1;
+          else if (post.platform === 'youtube') counts.youtube += 1;
+
           console.log(`✅ [CRON] Successfully posted to ${result.platform}: ${result.url}`);
           
           // 🤖 Smart Autopilot Refill: Check if queue needs more videos immediately after success
@@ -217,6 +251,8 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
     
   } catch (error) {
     console.error('❌ [CRON] Error in checkAndExecuteDuePosts:', error);
+  } finally {
+    try { await releaseLock('scheduler:tick'); } catch {}
   }
 }
 
