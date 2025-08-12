@@ -17,13 +17,15 @@
     "allowSyntheticDefaultImports": true
   },
   "include": [
-    "*.ts",
-    "services/**/*.ts",
-    "services/**/*.js"
+    "server.ts",
+    "**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "**/__tests__/**",
+    "legacy/**",
+    "../**"
   ]
 }
