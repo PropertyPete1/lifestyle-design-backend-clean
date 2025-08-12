@@ -1135,7 +1135,7 @@ app.post('/api/diag/unwedge-posting', async (req, res) => {
     const maxAgeMin = Number((req.query && req.query.maxAgeMin) ? req.query.maxAgeMin : 10);
     const cutoff = new Date(Date.now() - maxAgeMin * 60 * 1000);
     const r = await SchedulerQueueModel.updateMany(
-      { status: 'processing', lockedAt: { $lte: cutoff } },
+      { status: 'processing', $or: [ { lockedAt: { $lte: cutoff } }, { lockedAt: null }, { lockedAt: { $exists: false } } ] },
       { $set: { status: 'scheduled', lockedBy: null, lockedAt: null }, $inc: { attempts: 1 } }
     );
     const modified = (r && (r.modifiedCount || r.nModified)) || 0;
