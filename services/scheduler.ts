@@ -10,6 +10,15 @@ export async function executeQueueItemOnce(queueItem: any, settings: any): Promi
 
   if (!videoUrl) throw new Error('Missing videoUrl');
 
+  // Extra safety: if this platform+videoHash was already posted, short-circuit to avoid duplicates
+  try {
+    const { PostModel } = require('../models/Post');
+    const existing = await PostModel.findOne({ platform, videoHash, status: 'posted' }).lean();
+    if (existing && existing.externalPostId) {
+      return { success: true, deduped: true, externalPostId: existing.externalPostId, note: 'already-posted' };
+    }
+  } catch (_) {}
+
   const dailyLimit = Number(settings.maxPosts || 5);
   const remaining = await getRemainingSlots(platform, dailyLimit);
   if (remaining <= 0) {
