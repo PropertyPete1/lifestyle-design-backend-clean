@@ -171,16 +171,45 @@ async function runAutopilotOnce() {
         .map((v) => (v instanceof Date ? v : new Date(v)))
         .filter((d) => !Number.isNaN(d.getTime()));
     }
+    // Fallback: use Austin, TX (America/Chicago) prime-time windows 6–10pm CT
+    const hoursCT = [18,19,20,21,22];
+    const tz = 'America/Chicago';
     const now = new Date();
-    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0, 0);
-    return [0,1,2,3,4].map((i) => new Date(base.getTime() + i * 60 * 60 * 1000));
+
+    function partsForTz(d) {
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+        .formatToParts(d)
+        .reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+      return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
+    }
+    function offsetMinutesForNow() {
+      const utcStr = new Date().toLocaleString('en-US', { timeZone: 'UTC' });
+      const ctStr  = new Date().toLocaleString('en-US', { timeZone: tz });
+      return Math.round((Date.parse(utcStr) - Date.parse(ctStr)) / 60000);
+    }
+    const offMin = offsetMinutesForNow();
+
+    function makeCtDate(y, m, d, h) {
+      const assumedUTC = Date.UTC(y, m - 1, d, h, 0, 0);
+      return new Date(assumedUTC + offMin * 60000);
+    }
+
+    const todayParts = partsForTz(now);
+    const tomorrow = new Date(now.getTime() + 24*60*60*1000);
+    const tomorrowParts = partsForTz(tomorrow);
+
+    const todaySlots = hoursCT.map(h => makeCtDate(todayParts.year, todayParts.month, todayParts.day, h));
+    const tomorrowSlots = hoursCT.map(h => makeCtDate(tomorrowParts.year, tomorrowParts.month, tomorrowParts.day, h));
+    // Next 36 hours windows, future only
+    return [...todaySlots, ...tomorrowSlots].filter(d => d.getTime() > now.getTime());
   }
 
   const tz = settings.timeZone || 'America/Chicago';
   const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
   for (const platform of platforms) {
     const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
-    const need = Math.max(0, maxPosts - existing);
+    const need = Math.max(0, Number(settings.maxPosts || maxPosts) - existing);
+    // Prefer optimal slots; if not enough, fall back to Austin prime time 6–10pm CT slots already covered in normalizeOptimalSlots
     const slotList = normalizeOptimalSlots(optimal, platform).slice(0, need);
     for (let i = 0; i < need; i++) {
       let desired = slotList[i] || null;
