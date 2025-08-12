@@ -145,7 +145,16 @@ async function runAutopilotOnce() {
   const { uploadUrlToS3, uploadBufferToS3 } = require('../utils/s3Uploader');
   const { generateThumbnailBuffer } = require('../utils/videoThumbnail');
   const { proofreadCaptionWithKey } = require('./captionAI');
-  const { getNextFixedLocalSlots } = require('../utils/smartScheduler');
+  // Defensive candidateBuilder require
+  let buildCandidates;
+  try {
+    ({ buildCandidates } = require('./candidateBuilder'));
+  } catch {
+    buildCandidates = (scraped, recent, opts) => {
+      try { return require('./candidateBuilder').buildCandidates(scraped, recent, opts); }
+      catch { return require('./candidateBuilder.js').buildCandidates(scraped, recent, opts); }
+    };
+  }
 
   function normalizeOptimalSlots(optimal, platform) {
     if (!optimal || typeof optimal !== 'object') return [];
