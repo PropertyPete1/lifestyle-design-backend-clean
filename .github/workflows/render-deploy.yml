@@ -25,18 +25,3 @@ jobs:
             -H "Content-Type: application/json" \
             https://api.render.com/v1/services/${SERVICE_ID}/deploys
 
-      - name: Wait for service to switch (poll /health)
-        run: |
-          set -e
-          URL="https://lifestyle-design-backend-v2-clean.onrender.com/health"
-          echo "Polling $URL ..."
-          for i in {1..30}; do
-            code=$(curl -s -o /tmp/resp.json -w "%{http_code}" "$URL" || true)
-            if [ "$code" = "200" ]; then
-              cat /tmp/resp.json
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Service did not return 200 within time window" && exit 1
-

@@ -54,6 +54,8 @@ app.use(cors({
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Ensure OPTIONS preflight handled automatically by CORS
+app.options('*', cors());
 
 // MongoDB connection
 const connectDB = async () => {
@@ -785,30 +787,13 @@ app.get('/api/audience-summary', async (req, res) => {
   }
 });
 
-// helper to read dist meta files if present
-function readDistMeta() {
-  try {
-    const vPath = path.resolve(__dirname, 'VERSION');
-    const bPath = path.resolve(__dirname, 'BUILD_TIME');
-    const version = fs.existsSync(vPath) ? fs.readFileSync(vPath, 'utf8').trim() : 'unknown';
-    const buildTime = fs.existsSync(bPath) ? fs.readFileSync(bPath, 'utf8').trim() : 'unknown';
-    return { version, buildTime };
-  } catch {
-    return { version: 'unknown', buildTime: 'unknown' };
-  }
-}
-
-// Health check endpoint with version banner
+// Health check endpoint with version + build time
 app.get('/health', (_req, res) => {
-  const { version, buildTime } = readDistMeta();
-  res.json({
-    ok: true,
-    service: 'backend-v2',
-    version,
-    buildTime,
-    now: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  const vFile = path.resolve(__dirname, 'VERSION');
+  const tFile = path.resolve(__dirname, 'BUILD_TIME');
+  const version = fs.existsSync(vFile) ? fs.readFileSync(vFile, 'utf8').trim() : (process.env.GIT_COMMIT || 'unknown');
+  const buildTime = fs.existsSync(tFile) ? fs.readFileSync(tFile, 'utf8').trim() : (process.env.BUILD_TIME || 'unknown');
+  res.json({ ok: true, version, buildTime, uptimeSec: Math.round(process.uptime()) });
 });
 
 app.get('/api/health', (req, res) => {
