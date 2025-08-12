@@ -3,13 +3,17 @@
  * Uses existing Instagram and YouTube posting services
  */
 
-// Idempotent execute via TypeScript scheduler wrapper
+// Idempotent execute via scheduler wrapper with dist-safe pathing
 let executeQueueItemOnce;
 try {
-  executeQueueItemOnce = require('./scheduler').executeQueueItemOnce;
-} catch (_) {
-  // Fallback will be resolved when ts-node/register is active
-  executeQueueItemOnce = require('./scheduler').executeQueueItemOnce;
+  const path = require('path');
+  ({ executeQueueItemOnce } = require(path.resolve(__dirname, 'scheduler')));
+} catch (e) {
+  try {
+    ({ executeQueueItemOnce } = require('./scheduler'));
+  } catch (_) {
+    throw e;
+  }
 }
 
 /**
