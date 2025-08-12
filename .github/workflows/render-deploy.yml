@@ -1,27 +1,19 @@
-name: Deploy to Render (backend)
+name: Deploy to Render on push
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: {}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Trigger Render Deploy
+      - name: Trigger Render Deploy Hook
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: srv-d2907togjchc73c72sg0
+          DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          if [ -z "$RENDER_API_KEY" ]; then
-            echo "RENDER_API_KEY is not set in repo secrets; skipping deploy." && exit 1
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "Missing secret RENDER_DEPLOY_HOOK_URL"; exit 1;
           fi
-          curl -fsS -X POST \
-            -H "Authorization: Bearer $RENDER_API_KEY" \
-            -H "Content-Type: application/json" \
-            https://api.render.com/v1/services/${SERVICE_ID}/deploys
+          curl -sS -X POST "$DEPLOY_HOOK_URL"
 
