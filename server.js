@@ -973,14 +973,21 @@ app.get('/api/postNow/status/:jobId', (req, res) => {
   }
 });
 
+const fs = require('fs');
+const path = require('path');
+function readFileSafe(p){ try { return fs.readFileSync(p, 'utf8').trim(); } catch { return null; } }
+const VERSION  = readFileSafe(path.join(__dirname, 'VERSION')) || process.env.RENDER_GIT_COMMIT || 'unknown';
+const BUILT_AT = readFileSafe(path.join(__dirname, 'BUILD_TIME')) || new Date().toISOString();
+console.log('🆕 Server booted', { version: VERSION, builtAt: BUILT_AT });
+
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, nowUTC: new Date().toISOString(), version: VERSION, builtAt: BUILT_AT, pid: process.pid });
 });
 
 // Start server
 const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-      console.log('✅ AutoPilot system ready with Instagram API duplicate detection ACTIVE [v42]');
+  console.log('✅ AutoPilot system ready with Instagram API duplicate detection ACTIVE [v42]');
 });

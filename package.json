@@ -4,10 +4,11 @@
   "description": "Backend v2 for Lifestyle Design Auto Poster",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json || true && npm run copy:server && npm run copy:runtime && npm run verify:dist",
+    "build": "tsc -p tsconfig.json || true && npm run copy:server && npm run copy:runtime && npm run version:write && npm run verify:dist",
     "copy:server": "mkdir -p dist && ( [ -f server.js ] && cp -f server.js dist/server.js || true )",
     "copy:runtime": "mkdir -p dist/services dist/utils dist/routes dist/models dist/providers && ( [ -d services ] && cp -R services/* dist/services/ || true ) && ( [ -d utils ] && cp -R utils/* dist/utils/ || true ) && ( [ -d routes ] && cp -R routes/* dist/routes/ || true ) && ( [ -d models ] && cp -R models/* dist/models/ || true ) && ( [ -d providers ] && cp -R providers/* dist/providers/ || true )",
-    "verify:dist": "node -e \"const fs=require('fs'); const must=['dist/server.js','dist/services/autopilot.js','dist/services/postNow.js']; const missing=must.filter(p=>!fs.existsSync(p)); if(missing.length){console.error('❌ Missing in dist:',missing.join(', ')); process.exit(1)} else {console.log('✅ dist verified');}\"",
+    "version:write": "mkdir -p dist && (git rev-parse --short HEAD > dist/VERSION 2>/dev/null || echo ${RENDER_GIT_COMMIT:-unknown} > dist/VERSION) && date -u +%Y-%m-%dT%H:%M:%SZ > dist/BUILD_TIME",
+    "verify:dist": "node -e \"const fs=require('fs'); const must=['dist/server.js','dist/services/autopilot.js','dist/services/postNow.js','dist/VERSION','dist/BUILD_TIME']; const missing=must.filter(p=>!fs.existsSync(p)); if(missing.length){console.error('❌ Missing in dist:',missing.join(', ')); process.exit(1)} else {console.log('✅ dist verified');}\"",
     "start": "node dist/server.js",
     "dev": "ts-node --transpile-only server.ts",
     "postinstall": "npm run build",
