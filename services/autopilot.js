@@ -147,12 +147,31 @@ async function runAutopilotOnce() {
   const { proofreadCaptionWithKey } = require('./captionAI');
   const { getNextFixedLocalSlots } = require('../utils/smartScheduler');
 
+  function normalizeOptimalSlots(optimal, platform) {
+    if (!optimal || typeof optimal !== 'object') return [];
+    if (Array.isArray(optimal.slotsCT) && optimal.slotsCT.length) {
+      return optimal.slotsCT.map((iso) => new Date(iso));
+    }
+    if (Array.isArray(optimal.slotsUTC) && optimal.slotsUTC.length) {
+      return optimal.slotsUTC.map((iso) => new Date(iso));
+    }
+    if (Array.isArray(optimal.slots) && optimal.slots.length) {
+      const filtered = optimal.slots.filter((s) => !s?.platform || s.platform === platform);
+      return filtered
+        .map((s) => s?.ct || s?.utc || s?.iso || s?.date || s)
+        .map((v) => (v instanceof Date ? v : new Date(v)))
+        .filter((d) => !Number.isNaN(d.getTime()));
+    }
+    const now = new Date();
+    const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0, 0);
+    return [0,1,2,3,4].map((i) => new Date(base.getTime() + i * 60 * 60 * 1000));
+  }
+
   const tz = settings.timeZone || 'America/Chicago';
   for (const platform of platforms) {
     const existing = await SchedulerQueueModel.countDocuments({ platform, status: { $in: ['pending','scheduled'] }, scheduledTime: { $gte: now, $lte: tomorrow } });
     const need = Math.max(0, maxPosts - existing);
-    // Use heatmap optimal slots first, then fallback
-    const slotList = (optimal?.slots || []).filter((s:any)=>s.platform===platform).slice(0, need);
+    const slotList = normalizeOptimalSlots(optimal, platform).slice(0, need);
     for (let i = 0; i < need; i++) {
       const desired = slotList[i] ? new Date(slotList[i].iso) : null;
       const candidate = await selectUniqueCandidate(settings, blockedIds, last30, last30Hashes, last30Ahashes);
