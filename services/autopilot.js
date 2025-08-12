@@ -125,7 +125,7 @@ async function runAutopilotOnce() {
   const since = new Date(Date.now() - repostDelayDays*24*60*60*1000);
   const recentPosted = await ActivityLogModel.find({ platform: 'instagram', status: 'success', createdAt: { $gte: since } }).select('originalVideoId').lean();
   for (const x of recentPosted) if (x.originalVideoId) blockedIds.add(x.originalVideoId);
-  const pending = await SchedulerQueueModel.find({ status: { $in: ['pending','scheduled'] } }).select('originalVideoId').lean();
+  const pending = await SchedulerQueueModel.find({ status: { $in: ['pending','scheduled','processing'] } }).select('originalVideoId').lean();
   for (const x of pending) if (x.originalVideoId) blockedIds.add(x.originalVideoId);
 
   // Optimal slots from heatmap
@@ -254,7 +254,7 @@ async function runAutopilotOnce() {
       const hasCta = /\b(link in bio|link in profile)\b/i.test(body) || body.includes('⬆️') || body.includes('⬇️');
       const finalCaption = hasCta ? body : `${ctaLine}\n\n${body}`.trim();
 
-      // Schedule time: use fixed Austin local slots (9am, 1pm, 6pm CT)
+      // Schedule time: use fixed Austin local slots (6–10pm CT) when no optimal slot
       const scheduledTime = isValidDate(desired) ? desired : new Date(now.getTime() + (existing + i + 1) * 60 * 60 * 1000);
 
       // Create ONE queue item for the current platform only (avoid duplicates)
@@ -265,10 +265,24 @@ async function runAutopilotOnce() {
         const imgForHash = s3ThumbUrl || candidate.thumbnailUrl || candidate.url;
         visualHash = await computeAverageHashFromImageUrl(imgForHash);
       } catch (_) {}
+      if (!visualHash) {
+        const crypto = require('crypto');
+        const basis = (s3ThumbUrl || candidate.thumbnailUrl || candidate.url || String(candidate.id)).toLowerCase();
+        visualHash = crypto.createHash('md5').update(basis).digest('hex');
+      }
       const { normalizeCaption } = require('./candidateBuilder');
       const captionNorm = normalizeCaption(candidate.caption || '');
       const audioKey = candidate.audioId || candidate.musicMetadata?.music_product_id || candidate.musicMetadata?.song_name || candidate.musicMetadata?.artist_name || undefined;
       const durationSec = typeof candidate.duration === 'number' ? Math.round(candidate.duration) : undefined;
+
+      // Final duplicate guard against concurrent runs or status transitions
+      const dupExisting = await SchedulerQueueModel.findOne({
+        platform,
+        originalVideoId: candidate.id,
+        status: { $in: ['pending','scheduled','processing','posted'] },
+        scheduledTime: { $gte: new Date(Date.now() - 7*24*60*60*1000) }
+      }).select('_id').lean();
+      if (dupExisting) { totalSkipped += 1; skipReasons.push('ALREADY_QUEUED'); continue; }
 
       await SchedulerQueueModel.create({
         platform,
