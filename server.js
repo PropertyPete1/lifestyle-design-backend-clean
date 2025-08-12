@@ -1129,6 +1129,27 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, nowUTC: new Date().toISOString(), version: VERSION, builtAt: BUILT_AT, pid: process.pid });
 });
 
+// Autopilot control (pause/resume) — idempotent
+app.post('/api/autopilot/pause', async (_req, res) => {
+  try {
+    const SettingsModel = mongoose.model('SettingsClean');
+    await SettingsModel.findOneAndUpdate({}, { $set: { autopilotEnabled: false } }, { upsert: true });
+    return res.json({ success: true, autopilotEnabled: false });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || 'pause failed' });
+  }
+});
+
+app.post('/api/autopilot/resume', async (_req, res) => {
+  try {
+    const SettingsModel = mongoose.model('SettingsClean');
+    await SettingsModel.findOneAndUpdate({}, { $set: { autopilotEnabled: true } }, { upsert: true });
+    return res.json({ success: true, autopilotEnabled: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || 'resume failed' });
+  }
+});
+
 // Heatmap endpoints with safe fallbacks
 app.get('/api/heatmap/weekly', async (_req, res) => {
   try {
