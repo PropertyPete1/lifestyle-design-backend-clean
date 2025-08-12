@@ -152,8 +152,30 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
       return;
     }
     
-    // Enforce simple per-hour caps per platform (defaults)
-    const perHourCap = Number(process.env.AUTOPILOT_MAX_PER_HOUR || 6);
+    // Enforce per-hour caps per platform (defaults)
+    let perHourCap = Number(process.env.AUTOPILOT_MAX_PER_HOUR || settings?.hourlyLimit || 6);
+    let dailyLimit = Number(settings?.dailyLimit || settings?.maxPosts || 5);
+
+    // Burst Mode window check using America/Chicago wall time
+    function hhmmInTz(d, tz) {
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz || 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: false });
+      const parts = fmt.formatToParts(d).reduce((a,p)=>(a[p.type]=p.value,a),{});
+      return `${parts.hour}:${parts.minute}`;
+    }
+    function isInWindow(now, start, end, tz) {
+      const cur = hhmmInTz(now, tz);
+      return (start <= end)
+        ? (cur >= start && cur < end)
+        : (cur >= start || cur < end); // overnight window
+    }
+    const tz = settings?.timeZone || 'America/Chicago';
+    const burstEnabled = !!settings?.burstModeEnabled;
+    const cfg = settings?.burstModeConfig || {};
+    const inBurst = burstEnabled && cfg.startTime && cfg.endTime && isInWindow(now, String(cfg.startTime), String(cfg.endTime), tz);
+    if (inBurst) {
+      if (typeof cfg.postsPerHour === 'number') perHourCap = Number(cfg.postsPerHour);
+      if (typeof cfg.maxTotal === 'number') dailyLimit = Math.max(dailyLimit, Number(cfg.maxTotal));
+    }
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const counts = { instagram: 0, youtube: 0 };
     try {
@@ -163,6 +185,9 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
 
     // Execute each due post with caps and atomic claim
     for (const post of duePosts) {
+      if (inBurst && Array.isArray(cfg.platforms) && cfg.platforms.length > 0) {
+        if (!cfg.platforms.includes(post.platform)) continue;
+      }
       if (post.platform === 'instagram' && counts.instagram >= perHourCap) break;
       if (post.platform === 'youtube'   && counts.youtube   >= perHourCap) break;
       try {
@@ -268,8 +293,49 @@ function startCronScheduler(SchedulerQueueModel, SettingsModel, onTick) {
   
   // Run every minute: '* * * * *'
   // For testing, you can use '*/10 * * * * *' (every 10 seconds)
-  const cronJob = cron.schedule('* * * * *', () => {
+  const cronJob = cron.schedule('* * * * *', async () => {
     try { if (typeof onTick === 'function') onTick(); } catch(_) {}
+    // Pre-window refill check and auto-off handling
+    try {
+      const s = await SettingsModel.findOne({}).lean();
+      const tz = s?.timeZone || 'America/Chicago';
+      const cfg = s?.burstModeConfig || {};
+      const enabled = !!s?.burstModeEnabled;
+      const now = new Date();
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+      const parts = fmt.formatToParts(now).reduce((a,p)=>(a[p.type]=p.value,a),{});
+      const cur = `${parts.hour}:${parts.minute}`;
+      const start = String(cfg.startTime || '18:00');
+      const end = String(cfg.endTime || '19:00');
+      const preloadMin = Number(cfg.preloadMinutes || 10);
+
+      function toMinutes(hhmm){ const [h,m]=String(hhmm).split(':').map(Number); return h*60+(m||0); }
+      const curM = toMinutes(cur);
+      const startM = toMinutes(start);
+      const endM = toMinutes(end);
+      const preloadStartM = (startM - preloadMin + 24*60) % (24*60);
+
+      // Pre-window: trigger single refill when current minute hits preload boundary
+      if (enabled && preloadMin > 0) {
+        const nearPreload = curM === preloadStartM; // every minute tick, exact match
+        if (nearPreload) {
+          try {
+            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://lifestyle-design-backend-v2-clean.onrender.com' : 'http://localhost:3001';
+            await fetch(`${baseUrl}/api/autopilot/refill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scrapeLimit: Number(cfg.scrapeLimit || 50) }) });
+          } catch(_) {}
+        }
+      }
+
+      // Auto-off after window
+      if (enabled && cfg.autoOffAfterWindow === true) {
+        const inWindow = (startM <= endM) ? (curM >= startM && curM < endM) : (curM >= startM || curM < endM);
+        const justEnded = !inWindow && curM === endM; // at the exact end minute
+        if (justEnded) {
+          try { await SettingsModel.updateOne({}, { $set: { burstModeEnabled: false } }); } catch(_) {}
+        }
+      }
+    } catch(_) {}
+
     checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
   }, {
     timezone: 'America/Chicago' // Force Austin timezone execution

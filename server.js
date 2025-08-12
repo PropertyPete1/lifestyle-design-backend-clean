@@ -81,6 +81,21 @@ const settingsSchema = new mongoose.Schema({
   hourlyLimit: { type: Number, default: 3 },
   dailyLimit: { type: Number, default: 5 },
   repostDelayDays: { type: Number, default: 30 },
+  // Burst Mode controls and defaults
+  burstModeEnabled: { type: Boolean, default: true },
+  burstModeConfig: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {
+      startTime: '18:00',
+      endTime: '19:00',
+      postsPerHour: 40,
+      maxTotal: 40,
+      preloadMinutes: 10,
+      scrapeLimit: 50,
+      platforms: ['instagram'],
+      autoOffAfterWindow: true
+    }
+  },
 }, { timestamps: true, collection: 'SettingsClean' });
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
@@ -193,7 +208,44 @@ app.get('/api/scheduler/heartbeat', (req, res) => {
 let _lastRunStartedAt = null; let _lastRunDurationMs = null; let _lastLockHeld = false;
 let _lastRefillAt = null; let _lastRefillAdded = 0;
 app.get('/api/scheduler/health', (_req, res) => {
-  res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld, lastRefillAt: _lastRefillAt, lastRefillAdded: _lastRefillAdded });
+  try {
+    const s = mongoose.model('SettingsClean');
+    s.findOne({}).lean().then(doc => {
+      const tz = doc?.timeZone || 'America/Chicago';
+      const cfg = doc?.burstModeConfig || {};
+      const enabled = !!doc?.burstModeEnabled;
+      const now = new Date();
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+      const parts = fmt.formatToParts(now).reduce((a,p)=>(a[p.type]=p.value,a),{});
+      const cur = `${parts.hour}:${parts.minute}`;
+      function toMinutes(hhmm){ const [h,m]=String(hhmm || '00:00').split(':').map(Number); return h*60+(m||0); }
+      const curM = toMinutes(cur);
+      const startM = toMinutes(String(cfg.startTime || '18:00'));
+      const endM = toMinutes(String(cfg.endTime || '19:00'));
+      const inBurstWindow = enabled && ((startM <= endM) ? (curM >= startM && curM < endM) : (curM >= startM || curM < endM));
+
+      // next window boundaries (approximate, today-based)
+      const today = new Date(now);
+      function atHM(base, hm){ const d = new Date(base); const [h,m]=String(hm).split(':').map(Number); d.setHours(h||0,m||0,0,0); return d; }
+      let startDt = atHM(today, cfg.startTime || '18:00');
+      let endDt = atHM(today, cfg.endTime || '19:00');
+      if (endDt <= startDt) { // overnight
+        const plus1 = new Date(startDt); plus1.setDate(plus1.getDate()+1);
+        endDt = atHM(plus1, cfg.endTime || '19:00');
+      }
+      if (now > endDt) { // next day window
+        const next = new Date(today); next.setDate(next.getDate()+1);
+        startDt = atHM(next, cfg.startTime || '18:00');
+        endDt = atHM(next, cfg.endTime || '19:00');
+      }
+
+      res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld, lastRefillAt: _lastRefillAt, lastRefillAdded: _lastRefillAdded, inBurstWindow, nextBurstStartIso: startDt.toISOString(), nextBurstEndIso: endDt.toISOString() });
+    }).catch(() => {
+      res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld, lastRefillAt: _lastRefillAt, lastRefillAdded: _lastRefillAdded });
+    });
+  } catch {
+    res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld, lastRefillAt: _lastRefillAt, lastRefillAdded: _lastRefillAdded });
+  }
 });
 
 app.get('/api/time/debug', (req, res) => {
@@ -485,6 +537,39 @@ app.post('/api/settings', async (req, res) => {
   } catch (error) {
     console.error('❌ [SETTINGS] Update error:', error);
     res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// Burst Mode endpoints
+app.post('/api/burst', async (req, res) => {
+  try {
+    const { enabled, config } = req.body || {};
+    const setObj = {};
+    if (typeof enabled === 'boolean') setObj.burstModeEnabled = enabled;
+    if (config && typeof config === 'object') setObj.burstModeConfig = config;
+    const updated = await SettingsModel.findOneAndUpdate({}, { $set: setObj }, { upsert: true, new: true });
+    return res.json({ ok: true, burstModeEnabled: !!updated?.burstModeEnabled, burstModeConfig: updated?.burstModeConfig || {} });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'burst update failed' });
+  }
+});
+
+app.post('/api/burst/config', async (req, res) => {
+  try {
+    const cfg = req.body || {};
+    const updated = await SettingsModel.findOneAndUpdate({}, { $set: { burstModeConfig: cfg } }, { upsert: true, new: true });
+    return res.json({ ok: true, burstModeConfig: updated?.burstModeConfig || {} });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'burst config failed' });
+  }
+});
+
+app.get('/api/burst', async (_req, res) => {
+  try {
+    const s = await SettingsModel.findOne({}).lean();
+    return res.json({ burstModeEnabled: !!s?.burstModeEnabled, burstModeConfig: s?.burstModeConfig || {} });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'burst read failed' });
   }
 });
 
@@ -996,7 +1081,11 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       maxPosts: Number(settingsDoc && settingsDoc.maxPosts || 0),
       repostDelay: Number(settingsDoc && settingsDoc.repostDelay || 0),
       postTime: (settingsDoc && settingsDoc.timeZone) || 'America/Chicago',
-      dailyLimit: Number(settingsDoc && settingsDoc.maxPosts || 0)
+      timeZone: (settingsDoc && settingsDoc.timeZone) || 'America/Chicago',
+      dailyLimit: Number(settingsDoc && settingsDoc.dailyLimit || settingsDoc?.maxPosts || 0),
+      hourlyLimit: Number(settingsDoc && settingsDoc.hourlyLimit || 3),
+      burstModeEnabled: !!(settingsDoc && settingsDoc.burstModeEnabled),
+      burstModeConfig: (settingsDoc && settingsDoc.burstModeConfig) || {}
     };
 
     const total = await SchedulerQueueModel.countDocuments({}).catch(() => 0);
