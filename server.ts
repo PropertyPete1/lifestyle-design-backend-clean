@@ -623,9 +623,20 @@ app.post('/api/manual/schedule/:videoId', async (req, res) => {
 // Activity feed endpoints (for dashboard)
 app.get('/api/activity/feed', async (req, res) => {
   try {
-    // Minimal empty dataset shape compatible with frontend expectations
-    const data = [] as any[];
-    res.json({ data });
+    const platform = req.query.platform && String(req.query.platform);
+    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+    const match: any = { status: { $in: ['posted','completed'] } };
+    if (platform) match.platform = platform;
+    const items = await SchedulerQueueModel.find(match)
+      .sort({ postedAt: -1, updatedAt: -1 })
+      .limit(limit)
+      .select('platform thumbnailUrl postedAt createdAt');
+    const arr = items.map((it: any) => ({
+      platform: it.platform,
+      thumbnailUrl: it.thumbnailUrl,
+      timestamp: it.postedAt || it.createdAt,
+    }));
+    res.json(arr);
   } catch (error) {
     console.error('❌ [ACTIVITY FEED ERROR]', error);
     res.status(500).json({ error: 'Failed to fetch activity feed' });
