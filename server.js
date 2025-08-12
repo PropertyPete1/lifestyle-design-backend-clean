@@ -1129,6 +1129,36 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, nowUTC: new Date().toISOString(), version: VERSION, builtAt: BUILT_AT, pid: process.pid });
 });
 
+// --- DIAG: Unwedge items stuck in "processing" (older than maxAgeMin minutes) ---
+app.post('/api/diag/unwedge-posting', async (req, res) => {
+  try {
+    const maxAgeMin = Number((req.query && req.query.maxAgeMin) ? req.query.maxAgeMin : 10);
+    const cutoff = new Date(Date.now() - maxAgeMin * 60 * 1000);
+    const r = await SchedulerQueueModel.updateMany(
+      { status: 'processing', lockedAt: { $lte: cutoff } },
+      { $set: { status: 'scheduled', lockedBy: null, lockedAt: null }, $inc: { attempts: 1 } }
+    );
+    const modified = (r && (r.modifiedCount || r.nModified)) || 0;
+    return res.json({ success: true, modified, maxAgeMin });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || 'unwedge failed' });
+  }
+});
+
+// --- DIAG: Clear scheduler global lock (scheduler:tick) ---
+app.post('/api/diag/clear-sched-lock', async (_req, res) => {
+  try {
+    let LockModel;
+    try { ({ LockModel } = require('./models/Lock')); } catch (_) { LockModel = null; }
+    if (!LockModel) return res.json({ success: true, deleted: 0, note: 'no Lock model' });
+    const r = await LockModel.deleteOne({ key: 'scheduler:tick' });
+    const deleted = (r && (r.deletedCount || r.n)) || 0;
+    return res.json({ success: true, deleted });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e?.message || 'clear lock failed' });
+  }
+});
+
 // Autopilot control (pause/resume) — idempotent
 app.post('/api/autopilot/pause', async (_req, res) => {
   try {
