@@ -30,6 +30,7 @@ const settingsSchema = new mongoose.Schema({
   runwayApiKey: String,
   maxPosts: { type: Number, default: 4 },
   autopilotEnabled: { type: Boolean, default: false },
+  autopilotPaused: { type: Boolean, default: false },
   cartoonMode: { type: Boolean, default: false },
   schedulerType: { type: String, default: 'daily' },
 }, { timestamps: true, collection: 'SettingsClean' });
@@ -236,6 +237,9 @@ app.post('/api/autopilot/run', async (req, res) => {
     console.log('🚀 [AUTOPILOT] Starting AutoPilot run...');
     const settings = await SettingsModel.findOne();
     if (!settings) return res.status(400).json({ success:false, error: 'No settings found. Please configure your credentials first.' });
+    if (settings.autopilotPaused) {
+      return res.status(200).json({ success:false, reason: 'paused' });
+    }
     if (!settings.autopilotEnabled) return res.status(400).json({ success:false, error: 'AutoPilot is disabled. Enable it in settings first.' });
     const path = require('path');
     let runAutopilotOnce;
@@ -261,6 +265,28 @@ app.delete('/api/autopilot/queue', async (req, res) => {
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (e:any) {
     res.status(500).json({ success: false, error: e?.message || 'Failed to clear queue' });
+  }
+});
+
+// Emergency controls: stop/resume autopilot
+app.post('/api/autopilot/stop', async (req, res) => {
+  try {
+    await SettingsModel.updateOne({}, { $set: { autopilotPaused: true } }, { upsert: true });
+    const result = await SchedulerQueueModel.deleteMany({});
+    return res.json({ ok: true, message: 'Autopilot stopped and queue cleared', deletedCount: result.deletedCount });
+  } catch (err:any) {
+    console.error('[AUTOPILOT STOP ERROR]', err);
+    return res.status(500).json({ ok: false, error: err?.message || 'stop failed' });
+  }
+});
+
+app.post('/api/autopilot/resume', async (_req, res) => {
+  try {
+    await SettingsModel.updateOne({}, { $set: { autopilotPaused: false } }, { upsert: true });
+    return res.json({ ok: true, message: 'Autopilot resumed' });
+  } catch (err:any) {
+    console.error('[AUTOPILOT RESUME ERROR]', err);
+    return res.status(500).json({ ok: false, error: err?.message || 'resume failed' });
   }
 });
 

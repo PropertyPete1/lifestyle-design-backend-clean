@@ -54,6 +54,7 @@ const settingsSchema = new mongoose.Schema({
   runwayApiKey: String,
   maxPosts: { type: Number, default: 4 },
   autopilotEnabled: { type: Boolean, default: false },
+  autopilotPaused: { type: Boolean, default: false },
   cartoonMode: { type: Boolean, default: false },
   schedulerType: { type: String, default: 'daily' },
   timeZone: { type: String, default: 'America/Chicago' },
@@ -259,6 +260,28 @@ app.delete('/api/autopilot/queue', async (req, res) => {
   }
 });
 
+// Emergency controls: stop/resume autopilot
+app.post('/api/autopilot/stop', async (req, res) => {
+  try {
+    await SettingsModel.updateOne({}, { $set: { autopilotPaused: true } }, { upsert: true });
+    const result = await SchedulerQueueModel.deleteMany({});
+    return res.json({ ok: true, message: 'Autopilot stopped and queue cleared', deletedCount: result.deletedCount });
+  } catch (err) {
+    console.error('[AUTOPILOT STOP ERROR]', err);
+    return res.status(500).json({ ok: false, error: err?.message || 'stop failed' });
+  }
+});
+
+app.post('/api/autopilot/resume', async (req, res) => {
+  try {
+    await SettingsModel.updateOne({}, { $set: { autopilotPaused: false } }, { upsert: true });
+    return res.json({ ok: true, message: 'Autopilot resumed' });
+  } catch (err) {
+    console.error('[AUTOPILOT RESUME ERROR]', err);
+    return res.status(500).json({ ok: false, error: err?.message || 'resume failed' });
+  }
+});
+
 // Debug posted videos
 app.get('/api/debug/posted-videos', async (req, res) => {
   try {
@@ -380,6 +403,10 @@ app.get('/api/autopilot/queue', async (req, res) => {
 app.post('/api/autopilot/run', async (req, res) => {
   try {
     console.log('🚀 [AUTOPILOT] Triggered manual autopilot run');
+    const settings = await SettingsModel.findOne();
+    if (settings && settings.autopilotPaused) {
+      return res.json({ success: false, reason: 'paused' });
+    }
     const path = require('path');
     let runAutopilotOnce;
     try {
