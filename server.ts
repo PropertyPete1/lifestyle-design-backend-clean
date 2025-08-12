@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -783,13 +785,28 @@ app.get('/api/audience-summary', async (req, res) => {
   }
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
+// helper to read dist meta files if present
+function readDistMeta() {
+  try {
+    const vPath = path.resolve(__dirname, 'VERSION');
+    const bPath = path.resolve(__dirname, 'BUILD_TIME');
+    const version = fs.existsSync(vPath) ? fs.readFileSync(vPath, 'utf8').trim() : 'unknown';
+    const buildTime = fs.existsSync(bPath) ? fs.readFileSync(bPath, 'utf8').trim() : 'unknown';
+    return { version, buildTime };
+  } catch {
+    return { version: 'unknown', buildTime: 'unknown' };
+  }
+}
+
+// Health check endpoint with version banner
+app.get('/health', (_req, res) => {
+  const { version, buildTime } = readDistMeta();
   res.json({
-    status: 'ok',
+    ok: true,
     service: 'backend-v2',
-    version: '2.0.1',
-    timestamp: new Date().toISOString(),
+    version,
+    buildTime,
+    now: new Date().toISOString(),
     uptime: process.uptime()
   });
 });
