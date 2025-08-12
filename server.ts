@@ -870,32 +870,3 @@ app.get('/api/scheduler/tick', async (_req, res) => {
 };
 
 startServer().catch(console.error);
-    service: 'backend-v2',
-    path: req.originalUrl
-  });
-});
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('❌ [SERVER ERROR]', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    service: 'backend-v2',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
-});
-
-// Start server
-const startServer = async () => {
-  await connectDB();
-  
-  app.listen(PORT, () => {
-    console.log('🚀 [SERVER] Backend v2 running on port', PORT);
-    console.log('📋 [SERVER] Available endpoints:');
-    console.log('   GET  /health - Health check');
-    console.log('   GET  /api/settings - Load settings (DIRECT)');
-    console.log('   POST /api/settings - Save settings (DIRECT)');
-  });
-};
-
-startServer().catch(console.error);
