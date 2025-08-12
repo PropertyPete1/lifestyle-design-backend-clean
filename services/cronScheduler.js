@@ -234,7 +234,7 @@ function startCronScheduler(SchedulerQueueModel, SettingsModel, onTick) {
     try { if (typeof onTick === 'function') onTick(); } catch(_) {}
     checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel);
   }, {
-    timezone: 'America/Chicago' // Adjust to your timezone
+    timezone: 'America/Chicago' // Force Austin timezone execution
   });
   
   // Run immediately on start to catch any overdue posts

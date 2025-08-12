@@ -182,16 +182,23 @@ async function runAutopilotOnce() {
         .reduce((acc, p) => (acc[p.type] = p.value, acc), {});
       return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
     }
-    function offsetMinutesForNow() {
-      const utcStr = new Date().toLocaleString('en-US', { timeZone: 'UTC' });
-      const ctStr  = new Date().toLocaleString('en-US', { timeZone: tz });
-      return Math.round((Date.parse(utcStr) - Date.parse(ctStr)) / 60000);
+    function getOffsetMinutesAt(y, m, d, h) {
+      // Build a UTC date near target and ask formatter for the shortOffset in CT
+      const probe = new Date(Date.UTC(y, m - 1, d, h, 0, 0));
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
+      const off = fmt.formatToParts(probe).find(p => p.type === 'timeZoneName')?.value || 'GMT-0';
+      const m2 = off.match(/GMT([+\-])(\d{1,2})(?::(\d{2}))?/);
+      if (!m2) return 0;
+      const sign = m2[1] === '-' ? -1 : 1; // e.g., GMT-5 (CT summer) => -1
+      const hh = parseInt(m2[2] || '0', 10);
+      const mm = parseInt(m2[3] || '0', 10);
+      // Local = UTC + offset(sign*hh), so UTC = Local - offset
+      return -(sign * (hh * 60 + mm));
     }
-    const offMin = offsetMinutesForNow();
-
     function makeCtDate(y, m, d, h) {
-      const assumedUTC = Date.UTC(y, m - 1, d, h, 0, 0);
-      return new Date(assumedUTC + offMin * 60000);
+      const offMin = getOffsetMinutesAt(y, m, d, h); // negative for GMT-5 => -300
+      const utcMillis = Date.UTC(y, m - 1, d, h, 0, 0) - offMin * 60000;
+      return new Date(utcMillis);
     }
 
     const todayParts = partsForTz(now);
@@ -200,8 +207,9 @@ async function runAutopilotOnce() {
 
     const todaySlots = hoursCT.map(h => makeCtDate(todayParts.year, todayParts.month, todayParts.day, h));
     const tomorrowSlots = hoursCT.map(h => makeCtDate(tomorrowParts.year, tomorrowParts.month, tomorrowParts.day, h));
-    // Next 36 hours windows, future only
-    return [...todaySlots, ...tomorrowSlots].filter(d => d.getTime() > now.getTime());
+    // Next 36 hours windows, strictly future (> now + 5m)
+    const minFuture = new Date(now.getTime() + 5 * 60 * 1000);
+    return [...todaySlots, ...tomorrowSlots].filter(d => d.getTime() > minFuture.getTime());
   }
 
   const tz = settings.timeZone || 'America/Chicago';
