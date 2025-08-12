@@ -270,7 +270,13 @@ async function handlePostNow(req, res) {
       return res.status(400).json({ success: false, error: 'Missing Instagram credentials in settings' });
     }
     // Execute inline to return counts
-    const { executePostNow } = require('./services/postNow');
+    const path = require('path');
+    let executePostNow: any;
+    try {
+      ({ executePostNow } = require(path.resolve(__dirname, '..', 'services', 'postNow')));
+    } catch (_) {
+      ({ executePostNow } = require('./services/postNow'));
+    }
     const r = await executePostNow(settings);
     const posted = r?.success ? 1 : 0;
     const skipped = r?.success ? 0 : 1;
