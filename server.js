@@ -567,7 +567,10 @@ app.post('/api/burst/config', async (req, res) => {
 app.get('/api/burst', async (_req, res) => {
   try {
     const s = await SettingsModel.findOne({}).lean();
-    return res.json({ burstModeEnabled: !!s?.burstModeEnabled, burstModeConfig: s?.burstModeConfig || {} });
+    const defaultCfg = { startTime: '18:00', endTime: '19:00', postsPerHour: 40, maxTotal: 40, preloadMinutes: 10, scrapeLimit: 50, platforms: ['instagram'], autoOffAfterWindow: true };
+    const enabled = (typeof s?.burstModeEnabled === 'boolean') ? !!s.burstModeEnabled : true;
+    const cfg = (s && s.burstModeConfig && Object.keys(s.burstModeConfig).length) ? s.burstModeConfig : defaultCfg;
+    return res.json({ burstModeEnabled: enabled, burstModeConfig: cfg });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || 'burst read failed' });
   }
@@ -1322,7 +1325,7 @@ app.post('/api/autopilot/refill', async (req, res) => {
 
     // Fetch candidates from recent IG posts
     const { scrapeInstagramEngagement } = require('./utils/instagramScraper');
-    const limit = 30;
+    const limit = Number((req.body && req.body.scrapeLimit) || (settings?.burstModeConfig?.scrapeLimit) || 30);
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
     const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
