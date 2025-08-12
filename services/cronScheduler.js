@@ -111,11 +111,17 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
     } catch {}
 
     // Distributed single-run lock
-    const held = await acquireLock('scheduler:tick', 55);
-    if (!held.ok) {
-      console.log('🔒 [CRON] Another instance is running:', held.holder);
-      return;
+    let held;
+    try {
+      held = await acquireLock('scheduler:tick', 55);
+    } catch (e) {
+      if (e && e.code === 11000) {
+        console.log('🔒 [CRON] Lock already held, skip tick');
+        return;
+      }
+      throw e;
     }
+    if (!held.ok) { console.log('🔒 [CRON] Another instance is running:', held.holder); return; }
     console.log('⏰ [CRON] Checking for due posts...');
     
     // Get current time
@@ -161,7 +167,7 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
         // Atomically claim the item
         const now = new Date();
         const claimed = await SchedulerQueueModel.findOneAndUpdate(
-          { _id: post._id, status: 'scheduled' },
+          { _id: post._id, status: { $in: ['scheduled','pending'] }, postedAt: { $exists: false } },
           { $set: { status: 'processing', lockedAt: now } },
           { new: true }
         );
@@ -176,13 +182,8 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
         if (result.success) {
           // Mark as completed and log success
           await SchedulerQueueModel.updateOne(
-            { _id: post._id },
-            { 
-              status: 'posted',
-              postedAt: new Date(),
-              postId: result.postId,
-              postUrl: result.url
-            }
+            { _id: post._id, status: 'processing' },
+            { $set: { status: 'posted', postedAt: new Date(), postId: result.postId, postUrl: result.url } }
           );
           if (post.platform === 'instagram') counts.instagram += 1;
           else if (post.platform === 'youtube') counts.youtube += 1;

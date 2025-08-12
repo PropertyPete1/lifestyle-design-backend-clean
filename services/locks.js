@@ -22,12 +22,21 @@ async function acquireLock(key, ttlSec = 55) {
   const now = new Date();
   const holder = getInstanceId();
   const expiresAt = new Date(now.getTime() + ttlSec * 1000);
-  const res = await LockModel.findOneAndUpdate(
-    { key, $or: [{ expiresAt: { $lte: now } }, { expiresAt: { $exists: false } }] },
-    { $set: { key, holder, acquiredAt: now, expiresAt } },
-    { upsert: true, new: true }
-  ).lean();
-  if (res && res.holder === holder) return { ok: true, holder, expiresAt };
+  try {
+    const res = await LockModel.findOneAndUpdate(
+      { key, $or: [{ expiresAt: { $lte: now } }, { expiresAt: { $exists: false } }] },
+      { $set: { key, holder, acquiredAt: now, expiresAt } },
+      { upsert: true, new: true }
+    ).lean();
+    if (res && res.holder === holder) return { ok: true, holder, expiresAt };
+  } catch (e) {
+    if (e && e.code === 11000) {
+      // Duplicate means someone else won; treat as benign lock held
+      const cur = await LockModel.findOne({ key }).lean();
+      return { ok: false, holder: cur?.holder, expiresAt: cur?.expiresAt };
+    }
+    throw e;
+  }
   const cur = await LockModel.findOne({ key }).lean();
   if (cur && cur.holder === holder) return { ok: true, holder: cur.holder, expiresAt: cur.expiresAt };
   return { ok: false, holder: cur?.holder, expiresAt: cur?.expiresAt };
