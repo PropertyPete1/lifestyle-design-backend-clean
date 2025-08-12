@@ -9,10 +9,10 @@ const fetch = require('node-fetch');
  * Scrape Instagram videos with engagement data
  * @param {string} businessId - Instagram Business Account ID
  * @param {string} accessToken - Instagram Access Token
- * @param {number} limit - Number of videos to scrape (default 500)
+ * @param {number} limit - Number of videos to scrape (default 30; prod hard-cap 50)
  * @returns {Promise<Array>} Array of video objects with engagement
  */
-async function scrapeInstagramEngagement(businessId, accessToken, limit = 500, includeVisualHash = false) {
+async function scrapeInstagramEngagement(businessId, accessToken, limit = 30, includeVisualHash = false) {
   try {
     console.log(`🕷️ [IG SCRAPER] FUNCTION CALLED WITH LIMIT: ${limit} videos`);
     console.log(`🕷️ [IG SCRAPER] Scraping ${limit} videos for engagement data`);
@@ -20,6 +20,10 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500, i
     const videos = [];
     let nextPageUrl = `https://graph.facebook.com/v19.0/${businessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,play_count,timestamp,permalink,music_metadata&limit=50&access_token=${accessToken}`;
     
+    // In production, hard-cap large requests to avoid heavy background scraping
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd && limit > 50) limit = 50;
+
     while (videos.length < limit && nextPageUrl) {
       console.log(`🔍 [IG SCRAPER] Fetching page... (${videos.length}/${limit})`);
       
@@ -108,7 +112,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 500, i
  * Scrape videos from other public accounts via Business Discovery
  * Uses settings.discoveryUsernames (array of IG usernames) if provided
  */
-async function scrapeDiscoveryEngagement(businessId, accessToken, usernames = [], limit = 500) {
+async function scrapeDiscoveryEngagement(businessId, accessToken, usernames = [], limit = 30) {
   const results = [];
   if (!Array.isArray(usernames) || usernames.length === 0) {
     return results;
