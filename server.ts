@@ -400,13 +400,9 @@ function formatCTKey(d: Date): string {
 
 app.get('/api/analytics', async (_req, res) => {
   try {
-    const settings: any = await SettingsModel.findOne().lean();
-    const notes: string[] = [];
+    const settings: any = await SettingsModel.findOne();
 
-    const igConnected = !!(settings?.instagramToken && settings?.igBusinessId);
-    const ytConnected = !!(settings?.youtubeAccessToken && settings?.youtubeChannelId);
-
-    // 14-day CT labels
+    // Build 14-day label scaffold for compatibility
     const days = 14;
     const labels: string[] = [];
     const igSeries: number[] = [];
@@ -418,63 +414,51 @@ app.get('/api/analytics', async (_req, res) => {
       ytSeries.push(0);
     }
 
-    // Best-effort live counts
-    let igFollowers: number | null = null;
-    let ytSubscribers: number | null = null;
-    let igLast: string | null = null;
-    let ytLast: string | null = null;
-
-    if (!igConnected) notes.push('Instagram not connected (token or business ID missing).');
-    if (!ytConnected) notes.push('YouTube not connected (token or channel ID missing).');
-
-    if (igConnected) {
-      try {
-        const url = `https://graph.facebook.com/v19.0/${settings.igBusinessId}?fields=followers_count&access_token=${settings.instagramToken}`;
-        const r = await fetchFn(url);
-        if (r.ok) {
-          const j = await r.json();
-          igFollowers = typeof j?.followers_count === 'number' ? j.followers_count : null;
-          igLast = new Date().toISOString();
-        } else {
-          notes.push(`Instagram API ${r.status}`);
-        }
-      } catch (e: any) {
-        notes.push(`Instagram API error: ${e?.message || 'error'}`);
-      }
+    // Resolve analytics services both in ts-node and dist contexts
+    const path = require('path');
+    let getInstagramAnalytics: any; let getYouTubeAnalytics: any;
+    try {
+      ({ getInstagramAnalytics } = require(path.resolve(__dirname, '..', 'services', 'instagramAnalytics')));
+    } catch (_) {
+      ({ getInstagramAnalytics } = require('./services/instagramAnalytics'));
+    }
+    try {
+      ({ getYouTubeAnalytics } = require(path.resolve(__dirname, '..', 'services', 'youtubeAnalytics')));
+    } catch (_) {
+      ({ getYouTubeAnalytics } = require('./services/youtubeAnalytics'));
     }
 
-    if (ytConnected) {
-      try {
-        const r = await fetchFn(`https://www.googleapis.com/youtube/v3/channels?part=statistics&mine=true&access_token=${settings.youtubeAccessToken}`);
-        if (r.ok) {
-          const j = await r.json();
-          const stats = j?.items?.[0]?.statistics;
-          const sub = stats?.subscriberCount ? Number(stats.subscriberCount) : NaN;
-          ytSubscribers = Number.isFinite(sub) ? sub : null;
-          ytLast = new Date().toISOString();
-        } else {
-          notes.push(`YouTube API ${r.status}`);
-        }
-      } catch (e: any) {
-        notes.push(`YouTube API error: ${e?.message || 'error'}`);
-      }
-    }
+    const [ig, yt] = await Promise.all([
+      getInstagramAnalytics?.(SettingsModel).catch(() => ({})),
+      getYouTubeAnalytics?.(SettingsModel).catch(() => ({}))
+    ]);
 
-    const combined = igSeries.map((v, i) => v + (ytSeries[i] || 0));
+    // Normalize fields expected by the frontend
+    const instagram = {
+      connected: !!(settings?.instagramToken && settings?.igBusinessId),
+      followers: ig?.followers ?? null,
+      reach: ig?.reach ?? null,
+      engagementRate: typeof ig?.engagement === 'number' ? (ig.engagement / 100) : (ig?.engagementRate ?? null),
+      lastSync: ig?.lastUpdated ?? null,
+      autopilotEnabled: !!settings?.autopilotEnabled
+    };
 
-    return res.json({
-      instagram: { connected: igConnected, followers: igFollowers, engagementRate: null, lastSync: igLast },
-      youtube:   { connected: ytConnected, subscribers: ytSubscribers, avgViews: null, lastSync: ytLast },
-      timeseries: { labels, instagram: igSeries, youtube: ytSeries, combined },
-      notes
-    });
+    const youtube = {
+      connected: !!(settings?.youtubeAccessToken || (settings?.youtubeClientId && settings?.youtubeClientSecret && settings?.youtubeRefreshToken)),
+      subscribers: yt?.subscribers ?? null,
+      views: yt?.views ?? null,
+      watchTimeHours: yt?.watchTimeHours ?? yt?.watchTime ?? null,
+      lastSync: yt?.lastUpdated ?? null,
+      autopilotEnabled: !!settings?.autopilotEnabled
+    };
+
+    return res.json({ instagram, youtube, timeseries: { labels, instagram: igSeries, youtube: ytSeries, combined: igSeries.map((v,i)=>v+(ytSeries[i]||0)) } });
   } catch (err: any) {
     console.error('Analytics error', err);
     return res.json({
       instagram: { connected: false, followers: null, engagementRate: null, lastSync: null },
-      youtube:   { connected: false, subscribers: null, avgViews: null, lastSync: null },
-      timeseries: { labels: [], instagram: [], youtube: [], combined: [] },
-      notes: ['Analytics failed; returning empty data.']
+      youtube:   { connected: false, subscribers: null, views: null, watchTimeHours: null, lastSync: null },
+      timeseries: { labels: [], instagram: [], youtube: [], combined: [] }
     });
   }
 });
