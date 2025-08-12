@@ -190,7 +190,6 @@ app.get('/api/time/debug', (req, res) => {
 try {
   const { startCronScheduler } = require('./services/cronScheduler');
   const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
-  const { checkAndExecuteDuePosts } = require('./services/cronScheduler');
   // Reset ticks hourly
   setInterval(() => { schedulerHeartbeat.ticksLastHour = 0; }, 60 * 60 * 1000);
   startCronScheduler(SchedulerQueueModel, SettingsModel, () => {
