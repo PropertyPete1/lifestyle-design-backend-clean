@@ -191,8 +191,9 @@ app.get('/api/scheduler/heartbeat', (req, res) => {
 
 // Scheduler health snapshot
 let _lastRunStartedAt = null; let _lastRunDurationMs = null; let _lastLockHeld = false;
+let _lastRefillAt = null; let _lastRefillAdded = 0;
 app.get('/api/scheduler/health', (_req, res) => {
-  res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld });
+  res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld, lastRefillAt: _lastRefillAt, lastRefillAdded: _lastRefillAdded });
 });
 
 app.get('/api/time/debug', (req, res) => {
@@ -1182,6 +1183,118 @@ app.post('/api/diag/clear-sched-lock', async (_req, res) => {
     return res.json({ success: true, deleted });
   } catch (e) {
     return res.status(500).json({ success: false, error: e?.message || 'clear lock failed' });
+  }
+});
+
+// --- DIAG: Purge test/dev/demo data (safe) ---
+app.post('/api/diag/purge-test', async (req, res) => {
+  try {
+    const dryRun = String(req.query?.dryRun ?? 'true').toLowerCase() !== 'false';
+    const coll = mongoose.connection.db.collection('SchedulerQueue');
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const testCaption = { $or: [
+      { caption: { $regex: /\b(test|dummy|sample|\[TEST\])\b/i } },
+      { source: { $in: ['seed','test','demo','manual-test'] } },
+      { videoUrl: { $regex: /\/autopilot\/test/i } },
+      { filename: { $regex: /^test_/i } },
+      { $and: [ { postedAt: { $exists: true } }, { $or: [ { platform: null }, { platform: { $exists: false } } ] } ] },
+      { $and: [ { postedAt: { $exists: false } }, { createdAt: { $lte: fourteenDaysAgo } }, { source: 'seed' } ] }
+    ]};
+    // Only in known lifecycle statuses; never touch failed/completed explicitly
+    const filter = { $and: [ testCaption, { status: { $in: ['scheduled','processing','posted'] } } ] };
+    if (dryRun) {
+      const count = await coll.countDocuments(filter);
+      const sample = await coll.find(filter).project({ _id: 1 }).limit(10).toArray();
+      return res.json({ ok: true, dryRun: true, countWouldDelete: count, sampleIds: sample.map(d => String(d._id)) });
+    }
+    const result = await coll.deleteMany(filter);
+    return res.json({ ok: true, dryRun: false, deletedCount: result?.deletedCount || 0 });
+  } catch (e) {
+    return res.status(200).json({ ok: false, error: e?.message || 'purge-test failed' });
+  }
+});
+
+// --- AUTOPILOT: Refill queue up to threshold (no duplicates) ---
+app.post('/api/autopilot/refill', async (req, res) => {
+  try {
+    const settings = await SettingsModel.findOne({}).lean();
+    if (!settings) return res.json({ ok: false, error: 'no settings' });
+    const hourlyLimit = Number(settings.hourlyLimit || 3);
+    const dailyLimit = Number(settings.dailyLimit || settings.maxPosts || 5);
+    const repostDelayDays = Number(settings.repostDelayDays || 30);
+    const tz = settings.timeZone || 'America/Chicago';
+    const threshold = Math.max(3, hourlyLimit);
+    const targetQueue = Math.min(Number(settings.maxPosts || 10), 20);
+
+    const scheduledCount = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    if (scheduledCount > threshold) {
+      return res.json({ ok: true, added: 0, scheduledCount, threshold, note: 'above threshold' });
+    }
+
+    // Fetch candidates from recent IG posts
+    const { scrapeInstagramEngagement } = require('./utils/instagramScraper');
+    const limit = 30;
+    const igId = settings.igBusinessId; const igToken = settings.instagramToken;
+    if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
+    const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
+    const daysAgo = new Date(Date.now() - repostDelayDays * 24 * 60 * 60 * 1000);
+
+    // Build exclusion sets
+    const postedRecent = await SchedulerQueueModel.find({
+      status: { $in: ['posted','completed'] },
+      postedAt: { $gte: daysAgo }
+    }).select('originalVideoId s3Url videoUrl').lean();
+    const postedIds = new Set((postedRecent || []).map(r => String(r.originalVideoId || '')));
+    const inQueue = await SchedulerQueueModel.find({ status: { $in: ['scheduled','processing'] } }).select('originalVideoId s3Url videoUrl').lean();
+    const queuedIds = new Set((inQueue || []).map(r => String(r.originalVideoId || '')));
+
+    const toAdd = [];
+    for (const v of (candidates || [])) {
+      const sourceId = String(v.id || '');
+      if (!sourceId) continue;
+      if (postedIds.has(sourceId)) continue;
+      if (queuedIds.has(sourceId)) continue;
+      // Basic engagement floor if provided
+      if (typeof settings.minViews === 'number' && Number(v.views || 0) < Number(settings.minViews)) continue;
+      toAdd.push({ sourceId, videoUrl: v.url, caption: v.caption || '', engagement: Number(v.engagement || 0) });
+      if (toAdd.length >= (targetQueue - scheduledCount)) break;
+    }
+
+    // Compute next scheduled times (CT) spaced by 1 hour
+    const scheduledIds = [];
+    const now = new Date();
+    for (let i = 0; i < toAdd.length; i++) {
+      const item = toAdd[i];
+      const runAt = new Date(now.getTime() + (i + 1) * 60 * 60 * 1000);
+      const doc = await SchedulerQueueModel.create({
+        platform: 'instagram',
+        status: 'scheduled',
+        scheduledTime: runAt,
+        source: 'autopilot',
+        originalVideoId: item.sourceId,
+        videoUrl: item.videoUrl,
+        caption: item.caption,
+        engagement: item.engagement
+      });
+      scheduledIds.push(String(doc._id));
+    }
+
+    return res.json({ ok: true, added: scheduledIds.length, scheduledCount: scheduledCount + scheduledIds.length, threshold, scheduledIds });
+  } catch (e) {
+    return res.status(200).json({ ok: false, error: e?.message || 'refill failed' });
+  }
+});
+
+// Optional queue summary
+app.get('/api/queue/summary', async (_req, res) => {
+  try {
+    const total = await SchedulerQueueModel.countDocuments({});
+    const scheduled = await SchedulerQueueModel.countDocuments({ status: 'scheduled' });
+    const postingNow = await SchedulerQueueModel.countDocuments({ status: 'processing' });
+    const next5 = await SchedulerQueueModel.find({ status: 'scheduled' }).sort({ scheduledTime: 1 }).limit(5).select('_id platform scheduledTime').lean();
+    res.json({ total, scheduled, postingNow, next5: (next5 || []).map(d => ({ _id: String(d._id), platform: d.platform, runAt: d.scheduledTime })) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || 'summary failed' });
   }
 });
 
