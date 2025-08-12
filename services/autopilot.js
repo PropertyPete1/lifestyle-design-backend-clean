@@ -275,14 +275,17 @@ async function runAutopilotOnce() {
       const audioKey = candidate.audioId || candidate.musicMetadata?.music_product_id || candidate.musicMetadata?.song_name || candidate.musicMetadata?.artist_name || undefined;
       const durationSec = typeof candidate.duration === 'number' ? Math.round(candidate.duration) : undefined;
 
-      // Final duplicate guard against concurrent runs or status transitions
-      const dupExisting = await SchedulerQueueModel.findOne({
-        platform,
-        originalVideoId: candidate.id,
-        status: { $in: ['pending','scheduled','processing','posted'] },
-        scheduledTime: { $gte: new Date(Date.now() - 7*24*60*60*1000) }
-      }).select('_id').lean();
-      if (dupExisting) { totalSkipped += 1; skipReasons.push('ALREADY_QUEUED'); continue; }
+      // Final duplicate guard using last 30 most recent queue items (not time-based)
+      const recentQueue = await SchedulerQueueModel.find({ platform })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .select('originalVideoId visualHash')
+        .lean();
+      const recentIds = new Set((recentQueue || []).map(r => r.originalVideoId).filter(Boolean));
+      const recentHashes = new Set((recentQueue || []).map(r => r.visualHash).filter(Boolean));
+      if (recentIds.has(candidate.id) || (visualHash && recentHashes.has(visualHash))) {
+        totalSkipped += 1; skipReasons.push('ALREADY_IN_LAST_30'); continue;
+      }
 
       await SchedulerQueueModel.create({
         platform,
