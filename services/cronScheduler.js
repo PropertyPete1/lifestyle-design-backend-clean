@@ -111,17 +111,20 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
     } catch {}
 
     // Distributed single-run lock
+    _lastRunStartedAt = Date.now();
     let held;
     try {
       held = await acquireLock('scheduler:tick', 55);
     } catch (e) {
       if (e && e.code === 11000) {
+        _lastLockHeld = true;
         console.log('🔒 [CRON] Lock already held, skip tick');
         return;
       }
       throw e;
     }
-    if (!held.ok) { console.log('🔒 [CRON] Another instance is running:', held.holder); return; }
+    if (!held.ok) { _lastLockHeld = true; console.log('🔒 [CRON] Another instance is running:', held.holder); return; }
+    _lastLockHeld = false;
     console.log('⏰ [CRON] Checking for due posts...');
     
     // Get current time
@@ -254,6 +257,7 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
     console.error('❌ [CRON] Error in checkAndExecuteDuePosts:', error);
   } finally {
     try { await releaseLock('scheduler:tick'); } catch {}
+    _lastRunDurationMs = typeof _lastRunStartedAt === 'number' ? (Date.now() - _lastRunStartedAt) : null;
   }
 }
 

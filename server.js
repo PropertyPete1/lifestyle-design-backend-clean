@@ -61,6 +61,10 @@ const settingsSchema = new mongoose.Schema({
   repostDelay: { type: Number, default: 2 },
   postToYouTube: { type: Boolean, default: false },
   postToInstagram: { type: Boolean, default: true },
+  // Caps and controls
+  hourlyLimit: { type: Number, default: 3 },
+  dailyLimit: { type: Number, default: 5 },
+  repostDelayDays: { type: Number, default: 30 },
 }, { timestamps: true, collection: 'SettingsClean' });
 
 const SettingsModel = mongoose.model('SettingsClean', settingsSchema);
@@ -167,6 +171,12 @@ try {
 // Heartbeat + time debug routes
 app.get('/api/scheduler/heartbeat', (req, res) => {
   res.json(schedulerHeartbeat);
+});
+
+// Scheduler health snapshot
+let _lastRunStartedAt = null; let _lastRunDurationMs = null; let _lastLockHeld = false;
+app.get('/api/scheduler/health', (_req, res) => {
+  res.json({ ok: true, lastTickAt: schedulerHeartbeat.lastTickAtISO, lastRunDurationMs: _lastRunDurationMs, lockHeld: _lastLockHeld });
 });
 
 app.get('/api/time/debug', (req, res) => {
