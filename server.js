@@ -491,6 +491,11 @@ app.get('/api/autopilot/queue', async (req, res) => {
       scheduledTime: item.scheduledTime,
       scheduledTimeLocal: item.scheduledTime ? new Date(item.scheduledTime).toLocaleString('en-US', { timeZone: (item.timeZone || 'America/Chicago') }) : null,
     scheduledFor: item.scheduledTime ? new Date(item.scheduledTime).toISOString() : null,
+    // Aliases for frontend compatibility
+    runAt: item.scheduledTime ? new Date(item.scheduledTime).toISOString() : null,
+    scheduledAt: item.scheduledTime ? new Date(item.scheduledTime).toISOString() : null,
+    scheduledTimeCT: item.scheduledTime ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: true, month: 'short', day: '2-digit' }).format(new Date(item.scheduledTime)) : null,
+    scheduledLabel: item.scheduledTime ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(item.scheduledTime)) : 'Not scheduled',
       status: item.status,
       source: item.source || 'autopilot',
       videoUrl: item.videoUrl || item.s3Url,
