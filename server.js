@@ -1415,7 +1415,7 @@ app.post('/api/autopilot/refill', async (req, res) => {
     // Fetch candidates from recent IG posts
     const { scrapeInstagramEngagement } = require('./utils/instagramScraper');
     const { computeAverageHashFromImageUrl, hammingDistanceHex } = require('./utils/visualHash');
-    const igScrapeMax = Number((req.body && (req.body.igScrapeMax || req.body.scrapeLimit)) || (settings?.igScrapeMax) || (settings?.burstModeConfig?.scrapeLimit) || 30);
+    const igScrapeMax = Number((req.body && (req.body.igScrapeMax || req.body.scrapeLimit)) || (settings?.igScrapeMax) || 500);
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
     const candidates = await scrapeInstagramEngagement(igId, igToken, igScrapeMax).catch(() => []);

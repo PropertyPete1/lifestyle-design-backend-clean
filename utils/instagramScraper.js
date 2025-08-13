@@ -20,9 +20,7 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 30, in
     const videos = [];
     let nextPageUrl = `https://graph.facebook.com/v19.0/${businessId}/media?fields=id,media_type,media_url,thumbnail_url,caption,like_count,comments_count,play_count,timestamp,permalink,music_metadata&limit=50&access_token=${accessToken}`;
     
-    // In production, hard-cap large requests to avoid heavy background scraping
-    const isProd = process.env.NODE_ENV === 'production';
-    if (isProd && limit > 50) limit = 50;
+    // Allow paging beyond 50 when explicitly requested; Graph API pages at 50 per request
 
     while (videos.length < limit && nextPageUrl) {
       console.log(`🔍 [IG SCRAPER] Fetching page... (${videos.length}/${limit})`);
