@@ -38,13 +38,20 @@ async function selectUniqueCandidate(settings, blockedIds, last30, last30Hashes,
 
   // Scrape candidates (500), filter >= 10k engagement, sort desc
   const raw = await scrapeInstagramEngagement(settings.igBusinessId, settings.instagramToken, 500);
+  const minLikes = Number(settings.minimumIGLikesToRepost || 0);
   let candidates = raw
     .map(v => ({
-      id: v.id, url: v.url, thumbnailUrl: v.thumbnailUrl, caption: v.caption,
-      engagement: v.engagement, audioId: v.audioId, duration: v.duration
+      id: v.id,
+      url: v.url,
+      thumbnailUrl: v.thumbnailUrl,
+      caption: v.caption,
+      likes: Number(v.likes || v.like_count || 0),
+      engagement: Number(v.engagement || 0),
+      audioId: v.audioId,
+      duration: v.duration
     }))
-    .filter(v => v.engagement >= 10000)
-    .sort((a,b) => b.engagement - a.engagement);
+    .filter(v => (minLikes ? v.likes >= minLikes : true))
+    .sort((a,b) => (b.likes || 0) - (a.likes || 0));
 
   const last30Captions = last30.map(p => p.caption);
   const last30Durations = last30.map(p => p.duration);
@@ -83,6 +90,15 @@ async function selectUniqueCandidate(settings, blockedIds, last30, last30Hashes,
     const isDuplicateAudio = last30AudioIds.includes(video.audioId);
 
     if (isDuplicateVisual || isDuplicateCaption || isDuplicateAudio) continue;
+    // Final strict visual-hash cooldown against posted/completed within window
+    try {
+      const mongoose = require('mongoose');
+      const SchedulerQueueModel = mongoose.model('SchedulerQueue');
+      const cooldownDays = Number(settings.repostCooldownDays || settings.dupLookbackDays || settings.repostDelay || 30);
+      const since = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000);
+      const recent = await SchedulerQueueModel.find({ status: { $in: ['posted','completed'] }, postedAt: { $gte: since }, visualHash: { $exists: true } }).select('visualHash').limit(200).lean();
+      if (candidateAhash && recent.some(r => hammingDistance(candidateAhash, r.visualHash) <= 6)) continue;
+    } catch (_) {}
     return video;
   }
   return null;
