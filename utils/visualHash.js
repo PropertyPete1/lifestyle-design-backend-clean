@@ -1,5 +1,4 @@
 const fetch = require('node-fetch');
-const sharp = require('sharp');
 
 function hexToBitString(hex) {
   return hex.split('').map((c) => parseInt(c, 16).toString(2).padStart(4, '0')).join('');
@@ -38,8 +37,6 @@ async function computeAverageHashFromImageUrl(url, size = 8) {
 }
 
 module.exports = { hammingDistanceHex, computeAverageHashFromImageUrl };
-const sharp = require('sharp');
-const fetch = require('node-fetch');
 
 /**
  * Compute a simple 8x8 average hash (aHash) for an image URL

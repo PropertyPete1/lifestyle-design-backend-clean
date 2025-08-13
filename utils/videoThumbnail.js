@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
-const sharp = require('sharp');
+// Remove sharp dependency; return raw screenshot file buffer
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -21,7 +21,7 @@ async function generateThumbnailBuffer(videoUrl, timestampSeconds = 0.0) {
       .on('error', reject)
       .screenshots({ count: 1, timemarks: [String(timestampSeconds)], filename: 'thumb.jpg', folder: tmpDir, size: '720x?' });
   });
-  const buf = await sharp(output).jpeg({ quality: 85 }).toBuffer();
+  const buf = await fs.promises.readFile(output);
   try { await fs.promises.unlink(output); } catch (_) {}
   try { await fs.promises.rmdir(tmpDir, { recursive: true }); } catch (_) {}
   return buf;
