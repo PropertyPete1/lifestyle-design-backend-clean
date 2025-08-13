@@ -58,33 +58,26 @@ async function triggerAutopilotRefill(SchedulerQueueModel, SettingsModel) {
     console.log(`📊 [REFILL] Queue: ${currentQueueCount}/${targetCount} (threshold: ${refillThreshold})`);
     
     if (currentQueueCount <= refillThreshold) {
-      console.log(`🚀 [REFILL] Queue low (${currentQueueCount} <= ${refillThreshold}), triggering autopilot...`);
-      
-      // Call the autopilot endpoint internally
+      console.log(`🚀 [REFILL] Queue low (${currentQueueCount} <= ${refillThreshold}), triggering /api/autopilot/refill...`);
+      // Prefer the explicit refill endpoint so threshold logic stays server-side
       try {
-        // Use environment variable or fallback to localhost
-        const baseUrl = process.env.NODE_ENV === 'production' 
+        const baseUrl = process.env.NODE_ENV === 'production'
           ? 'https://lifestyle-design-backend-v2-clean.onrender.com'
           : 'http://localhost:3001';
-          
-        const response = await fetch(`${baseUrl}/api/autopilot/run`, {
+        const response = await fetch(`${baseUrl}/api/autopilot/refill`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: 'auto-refill' })
         });
-        
         const result = await response.json();
-        
-        if (result.success) {
-          console.log(`✅ [REFILL] Autopilot refill completed: ${result.videosProcessed} videos added`);
+        if (response.ok && (result?.ok || result?.success)) {
+          console.log(`✅ [REFILL] Refill result: added=${result.added ?? result.videosProcessed ?? 0} scheduledCount=${result.scheduledCount ?? 'n/a'}`);
         } else {
-          console.error(`❌ [REFILL] Autopilot refill failed: ${result.error}`);
+          console.error('❌ [REFILL] Refill endpoint returned error:', result);
         }
-        
       } catch (refillError) {
-        console.error('❌ [REFILL] Error calling autopilot endpoint:', refillError);
+        console.error('❌ [REFILL] Error calling refill endpoint:', refillError);
       }
-      
     } else {
       console.log(`✅ [REFILL] Queue sufficient (${currentQueueCount} > ${refillThreshold}), no refill needed`);
     }
@@ -176,6 +169,17 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
       if (typeof cfg.postsPerHour === 'number') perHourCap = Number(cfg.postsPerHour);
       if (typeof cfg.maxTotal === 'number') dailyLimit = Math.max(dailyLimit, Number(cfg.maxTotal));
     }
+    // Enforce daily limit (across all platforms)
+    try {
+      const startOfDay = new Date(now); startOfDay.setHours(0,0,0,0);
+      const endOfDay = new Date(now); endOfDay.setHours(23,59,59,999);
+      const postedToday = await SchedulerQueueModel.countDocuments({ status: { $in: ['posted','completed'] }, postedAt: { $gte: startOfDay, $lte: endOfDay } });
+      if (postedToday >= dailyLimit) {
+        console.log(`🛑 [CRON] Daily cap reached (${postedToday}/${dailyLimit}). Skipping tick.`);
+        return;
+      }
+    } catch(_) {}
+
     const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const counts = { instagram: 0, youtube: 0 };
     try {
@@ -295,6 +299,8 @@ function startCronScheduler(SchedulerQueueModel, SettingsModel, onTick) {
   // For testing, you can use '*/10 * * * * *' (every 10 seconds)
   const cronJob = cron.schedule('* * * * *', async () => {
     try { if (typeof onTick === 'function') onTick(); } catch(_) {}
+    // General low-queue refill each minute (independent of burst window)
+    try { await triggerAutopilotRefill(SchedulerQueueModel, SettingsModel); } catch(_) {}
     // Pre-window refill check and auto-off handling
     try {
       const s = await SettingsModel.findOne({}).lean();

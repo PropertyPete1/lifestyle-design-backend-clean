@@ -44,3 +44,4 @@ function normalizeCaption(s) {
 module.exports = { buildCandidates, normalizeCaption };
 
 
+

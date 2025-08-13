@@ -1095,6 +1095,12 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
     const dueNow = await SchedulerQueueModel.countDocuments({ status: { $in: ['scheduled','pending'] }, scheduledTime: { $lte: now } }).catch(() => 0);
     const postingNow = await SchedulerQueueModel.countDocuments({ status: { $in: ['processing'] } }).catch(() => 0);
     const last10Docs = await SchedulerQueueModel.find({}).sort({ updatedAt: -1 }).limit(10).lean().catch(() => []);
+    // Next run time (earliest scheduled)
+    let nextRunIso = null;
+    try {
+      const nextDoc = await SchedulerQueueModel.findOne({ status: 'scheduled' }).sort({ scheduledTime: 1 }).select('scheduledTime').lean();
+      if (nextDoc && nextDoc.scheduledTime) nextRunIso = new Date(nextDoc.scheduledTime).toISOString();
+    } catch(_) {}
     const last10 = (last10Docs || []).map(it => ({
       _id: String(it._id),
       platform: it.platform,
@@ -1179,6 +1185,7 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       settings,
       scheduler,
       queue: { total, dueNow, postingNow, last10 },
+      nextRunIso,
       postsLastHour,
       countersToday,
       locks: { schedulerLock, postOnceLocks },
@@ -1461,7 +1468,11 @@ app.get('/api/scheduler/status', async (_req, res) => {
     ]);
     const settingsDoc = await SettingsModel.findOne({});
     const limit = Number(settingsDoc?.maxPosts || 5);
-    const nextRun = new Date(Date.now()+60*1000).toISOString();
+    let nextRun = null;
+    try {
+      const nextDoc = await SchedulerQueueModel.findOne({ status: 'scheduled' }).sort({ scheduledTime: 1 }).select('scheduledTime').lean();
+      if (nextDoc && nextDoc.scheduledTime) nextRun = new Date(nextDoc.scheduledTime).toISOString();
+    } catch(_) {}
     res.json({
       queueSize,
       today: { instagram: igToday, youtube: ytToday },
@@ -1471,6 +1482,23 @@ app.get('/api/scheduler/status', async (_req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed to get scheduler status' });
+  }
+});
+
+// Admin: force the next due post to run ~2 minutes from now (keeps spacing)
+app.post('/api/admin/force-reschedule', async (_req, res) => {
+  try {
+    const now = new Date();
+    const runAt = new Date(now.getTime() + 2 * 60 * 1000);
+    const doc = await SchedulerQueueModel.findOneAndUpdate(
+      { status: 'scheduled' },
+      { $set: { scheduledTime: runAt } },
+      { sort: { scheduledTime: 1 }, new: true }
+    );
+    if (!doc) return res.json({ ok: false, error: 'no scheduled item' });
+    return res.json({ ok: true, id: String(doc._id), runAt: runAt.toISOString() });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || 'force-reschedule failed' });
   }
 });
 
