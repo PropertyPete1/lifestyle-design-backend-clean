@@ -313,6 +313,38 @@ app.get('/api/scheduler/tick', async (req, res) => {
   }
 })();
 
+// One-time normalization: assign scheduledTime if missing on scheduled items
+(async () => {
+  try {
+    const missing = await SchedulerQueueModel.find({ status: 'scheduled', $or: [ { scheduledTime: null }, { scheduledTime: { $exists: false } } ] })
+      .sort({ createdAt: 1 })
+      .limit(50)
+      .lean();
+    if (!missing || !missing.length) return;
+    const now = new Date();
+    // Collect existing future slots to avoid collisions
+    const existing = await SchedulerQueueModel.find({ status: 'scheduled', scheduledTime: { $gte: now } }).select('scheduledTime').lean();
+    const existingTimes = new Set((existing || []).map(d => new Date(d.scheduledTime).toISOString()));
+    let cursor = new Date(now.getTime() + 60 * 1000); // start at now+1min
+    const updates = [];
+    for (const doc of missing) {
+      // Find next free slot spaced by 60 minutes
+      while (existingTimes.has(cursor.toISOString())) {
+        cursor = new Date(cursor.getTime() + 60 * 60 * 1000);
+      }
+      updates.push({ id: doc._id, when: new Date(cursor) });
+      existingTimes.add(cursor.toISOString());
+      cursor = new Date(cursor.getTime() + 60 * 60 * 1000);
+    }
+    for (const u of updates) {
+      await SchedulerQueueModel.updateOne({ _id: u.id }, { $set: { scheduledTime: u.when } });
+    }
+    console.log(`🛠️ [MIGRATION] Assigned scheduledTime for ${updates.length} items missing it`);
+  } catch (e) {
+    console.warn('⚠️ [MIGRATION] Failed to assign scheduledTime:', e?.message || e);
+  }
+})();
+
 // Autopilot status
 app.get('/api/autopilot/status', async (req, res) => {
   try {
@@ -456,6 +488,7 @@ app.get('/api/autopilot/queue', async (req, res) => {
       caption: item.caption || 'Generated caption',
       scheduledTime: item.scheduledTime,
       scheduledTimeLocal: item.scheduledTime ? new Date(item.scheduledTime).toLocaleString('en-US', { timeZone: (item.timeZone || 'America/Chicago') }) : null,
+    scheduledFor: item.scheduledTime ? new Date(item.scheduledTime).toISOString() : null,
       status: item.status,
       source: item.source || 'autopilot',
       videoUrl: item.videoUrl || item.s3Url,
