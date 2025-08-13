@@ -1402,7 +1402,11 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const limit = Number((req.body && req.body.scrapeLimit) || (settings?.burstModeConfig?.scrapeLimit) || 30);
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
-      const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
+    const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
+    // Also fetch user's last 30 recent posts to hard-block duplicates by originalVideoId
+    let recent30 = [];
+    try { recent30 = await scrapeInstagramEngagement(igId, igToken, 30); } catch { recent30 = []; }
+    const recentIds = new Set((recent30 || []).map(r => String(r.id || '')));
     const daysAgo = new Date(Date.now() - repostDelayDays * 24 * 60 * 60 * 1000);
 
     // Build exclusion sets
@@ -1415,9 +1419,10 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const queuedIds = new Set((inQueue || []).map(r => String(r.originalVideoId || '')));
 
     const toAdd = [];
-      for (const v of (candidates || [])) {
+    for (const v of (candidates || [])) {
       const sourceId = String(v.id || '');
       if (!sourceId) continue;
+      if (recentIds.has(sourceId)) continue; // hard-block last 30 recent
       if (postedIds.has(sourceId)) continue;
       if (queuedIds.has(sourceId)) continue;
         // Enforce minimum IG views strictly
