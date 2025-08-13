@@ -10,6 +10,7 @@ const cron = require('node-cron');
 const { executeScheduledPost } = require('./postExecutor');
 const fetch = require('node-fetch');
 const { acquireLock, releaseLock } = require('./locks');
+const { hammingDistanceHex } = require('../utils/visualHash');
 const mongoose = require('mongoose');
 let SchedulerQueueModel;
 try { SchedulerQueueModel = mongoose.model('SchedulerQueue'); } catch (_) {
@@ -194,6 +195,18 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
       }
       if (post.platform === 'instagram' && counts.instagram >= perHourCap) break;
       if (post.platform === 'youtube'   && counts.youtube   >= perHourCap) break;
+      // Skip duplicate by visual hash within lookback
+      try {
+        if (post.ignoreDuplicate !== true && post.visualHash) {
+          const lookback = Number(process.env.DUP_LOOKBACK_DAYS || cfg.dupLookbackDays || 30);
+          const since = new Date(Date.now() - lookback*24*60*60*1000);
+          const recent = await SchedulerQueueModel.find({ visualHash: { $exists: true }, postedAt: { $gte: since }, status: { $in: ['posted','completed'] } }).select('visualHash').limit(200).lean();
+          const maxD = Number(cfg.dupHashMaxDistance || process.env.DUP_HASH_MAX_DISTANCE || 6);
+          let dup = false;
+          for (const r of recent) { if (hammingDistanceHex(post.visualHash, r.visualHash) <= maxD) { dup = true; break; } }
+          if (dup) { console.log('⛔ [CRON] Skip duplicate visual', post._id); await SchedulerQueueModel.updateOne({ _id: post._id }, { $set: { status: 'skipped', skipReason: 'DUPLICATE_VISUAL' } }); continue; }
+        }
+      } catch {}
       // Skip invalid queue items (no video URL/S3)
       if (!post.videoUrl && !post.s3Url) { console.warn('⚠️ [CRON] Skip item with no video URL/S3', String(post._id)); continue; }
       try {

@@ -78,6 +78,9 @@ const settingsSchema = new mongoose.Schema({
   // Content filters
   minimumIGViewsToRepost: { type: Number, default: 0 },
   minimumIGLikesToRepost: { type: Number, default: 0 },
+  // Visual duplicate config
+  dupHashMaxDistance: { type: Number, default: 6 },
+  dupLookbackDays: { type: Number, default: 30 },
   postToYouTube: { type: Boolean, default: false },
   postToInstagram: { type: Boolean, default: true },
   // Caps and controls
@@ -133,6 +136,10 @@ const schedulerQueueSchema = new mongoose.Schema({
   thumbnailHash: String,
   engagement: Number,
   originalVideoId: String,
+    visualHash: { type: String, index: true },
+    visualHashBits: Number,
+    hashVersion: String,
+    ignoreDuplicate: { type: Boolean, default: false },
   postedAt: { type: Date },
   hashtags: [String],
   retryCount: { type: Number, default: 0 },
@@ -140,6 +147,8 @@ const schedulerQueueSchema = new mongoose.Schema({
   ,
   autofill: { type: Boolean, default: false }
 }, { timestamps: true, collection: 'SchedulerQueue' });
+
+try { schedulerQueueSchema.index({ visualHash: 1 }, { sparse: true }); } catch {}
 
 const SchedulerQueueModel = mongoose.model('SchedulerQueue', schedulerQueueSchema);
 
@@ -1131,7 +1140,9 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
         dailyLimit: Number(settingsDoc && settingsDoc.dailyLimit || settingsDoc?.maxPosts || 0),
         hourlyLimit: Number(settingsDoc && settingsDoc.hourlyLimit || 3),
       burstModeEnabled: !!(settingsDoc && settingsDoc.burstModeEnabled),
-      burstModeConfig: (settingsDoc && settingsDoc.burstModeConfig) || {}
+        burstModeConfig: (settingsDoc && settingsDoc.burstModeConfig) || {},
+        dupHashMaxDistance: Number(settingsDoc && settingsDoc.dupHashMaxDistance || 6),
+        dupLookbackDays: Number(settingsDoc && settingsDoc.dupLookbackDays || 30)
     };
 
     const total = await SchedulerQueueModel.countDocuments({}).catch(() => 0);
@@ -1241,7 +1252,7 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
         if (now > eDt) { const next = new Date(today); next.setDate(next.getDate()+1); sDt = atHM(next, start); eDt = atHM(next, end); }
         nextBurstStartIso = sDt.toISOString(); nextBurstEndIso = eDt.toISOString();
       } catch {}
-      return res.json({
+    return res.json({
       nowIso,
       instanceId,
       env: { NODE_ENV: process.env.NODE_ENV, RENDER: (process.env.RENDER || process.env.RENDER_SERVICE_ID) ? 'true' : 'false' },
@@ -1256,7 +1267,7 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
         ctNow,
         inBurstWindow,
         nextBurstStartIso,
-        nextBurstEndIso
+      nextBurstEndIso
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: e?.message || 'failed to build report' });
@@ -1401,6 +1412,7 @@ app.post('/api/autopilot/refill', async (req, res) => {
 
     // Fetch candidates from recent IG posts
     const { scrapeInstagramEngagement } = require('./utils/instagramScraper');
+    const { computeAverageHashFromImageUrl, hammingDistanceHex } = require('./utils/visualHash');
     const limit = Number((req.body && req.body.scrapeLimit) || (settings?.burstModeConfig?.scrapeLimit) || 30);
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
@@ -1431,11 +1443,22 @@ app.post('/api/autopilot/refill', async (req, res) => {
     for (const v of (candidates || [])) {
       const sourceId = String(v.id || '');
       if (!sourceId) continue;
-      // Visual hash block against last 30
+      // Visual hash block against recent with distance threshold
       try {
-        const vhash = v.thumbnailHash || (v.thumbnailUrl ? await generateThumbnailHash(v.thumbnailUrl) : null);
-        if (vhash && recentVisualHashes.has(String(vhash))) continue;
-      } catch {}
+        let vhash = v.thumbnailHash || null;
+        if (!vhash && v.thumbnailUrl) {
+          const ah = await computeAverageHashFromImageUrl(v.thumbnailUrl);
+          vhash = ah.hash;
+        }
+        if (!vhash) continue; // no thumbnail → skip
+        let isDup = false;
+        const maxD = Number(settings.dupHashMaxDistance || 6);
+        for (const prev of recentVisualHashes) {
+          if (hammingDistanceHex(vhash, prev) <= maxD) { isDup = true; break; }
+        }
+        if (isDup) continue;
+        v._visualHash = vhash;
+      } catch { continue; }
       if (postedIds.has(sourceId)) continue;
       if (queuedIds.has(sourceId)) continue;
       // Enforce minimum likes (preferred) and views (fallback)
@@ -1462,7 +1485,9 @@ app.post('/api/autopilot/refill', async (req, res) => {
         originalVideoId: item.sourceId,
         videoUrl: item.videoUrl,
         caption: item.caption,
-        engagement: item.engagement
+        engagement: item.engagement,
+        visualHash: item._visualHash || null,
+        hashVersion: item._visualHash ? 'ahash-v1' : null
       });
       scheduledIds.push(String(doc._id));
     }
