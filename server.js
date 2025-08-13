@@ -500,6 +500,8 @@ app.get('/api/autopilot/queue', async (req, res) => {
       source: item.source || 'autopilot',
       videoUrl: item.videoUrl || item.s3Url,
       thumbnailUrl: item.thumbnailUrl || item.s3Url,
+      s3Url: item.s3Url || item.videoUrl || null,
+      videoSource: item.s3Url ? 's3' : (item.videoUrl ? 'cdn' : 'none'),
       engagement: item.engagement || 0,
       originalVideoId: item.originalVideoId
     }));
