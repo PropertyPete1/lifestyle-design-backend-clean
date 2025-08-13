@@ -194,6 +194,8 @@ async function checkAndExecuteDuePosts(SchedulerQueueModel, SettingsModel) {
       }
       if (post.platform === 'instagram' && counts.instagram >= perHourCap) break;
       if (post.platform === 'youtube'   && counts.youtube   >= perHourCap) break;
+      // Skip invalid queue items (no video URL/S3)
+      if (!post.videoUrl && !post.s3Url) { console.warn('⚠️ [CRON] Skip item with no video URL/S3', String(post._id)); continue; }
       try {
         console.log(`🚀 [CRON] Executing post ${post._id} (${post.platform}) - was due at ${post.scheduledTime}`);
         // Atomically claim the item

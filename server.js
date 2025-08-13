@@ -75,6 +75,8 @@ const settingsSchema = new mongoose.Schema({
   schedulerType: { type: String, default: 'daily' },
   timeZone: { type: String, default: 'America/Chicago' },
   repostDelay: { type: Number, default: 2 },
+  // Content filters
+  minimumIGViewsToRepost: { type: Number, default: 0 },
   postToYouTube: { type: Boolean, default: false },
   postToInstagram: { type: Boolean, default: true },
   // Caps and controls
@@ -1111,15 +1113,15 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
     let DailyCounterModel = null; try { DailyCounterModel = require('./models/DailyCounter').DailyCounterModel; } catch(_) {}
     let LockModel = null; try { LockModel = require('./models/Lock').LockModel; } catch(_) {}
 
-    const settingsDoc = await SettingsModel.findOne({}).lean().catch(() => null);
+      const settingsDoc = await SettingsModel.findOne({}).lean().catch(() => null);
     const settings = {
       autopilotEnabled: !!(settingsDoc && settingsDoc.autopilotEnabled),
       maxPosts: Number(settingsDoc && settingsDoc.maxPosts || 0),
       repostDelay: Number(settingsDoc && settingsDoc.repostDelay || 0),
       postTime: (settingsDoc && settingsDoc.timeZone) || 'America/Chicago',
       timeZone: (settingsDoc && settingsDoc.timeZone) || 'America/Chicago',
-      dailyLimit: Number(settingsDoc && settingsDoc.dailyLimit || settingsDoc?.maxPosts || 0),
-      hourlyLimit: Number(settingsDoc && settingsDoc.hourlyLimit || 3),
+        dailyLimit: Number(settingsDoc && settingsDoc.dailyLimit || settingsDoc?.maxPosts || 0),
+        hourlyLimit: Number(settingsDoc && settingsDoc.hourlyLimit || 3),
       burstModeEnabled: !!(settingsDoc && settingsDoc.burstModeEnabled),
       burstModeConfig: (settingsDoc && settingsDoc.burstModeConfig) || {}
     };
@@ -1155,7 +1157,7 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       samples: (samples || []).map(s => ({ _id: String(s._id), platform: s.platform, postedAtIso: s.postedAt ? new Date(s.postedAt).toISOString() : null }))
     };
 
-    let countersToday = { instagram: 0, youtube: 0, total: 0 };
+      let countersToday = { instagram: 0, youtube: 0, total: 0 };
     if (DailyCounterModel) {
       try {
         const d = new Date();
@@ -1175,7 +1177,7 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       countersToday = { instagram: igT, youtube: ytT, total: igT + ytT };
     }
 
-    let schedulerLock = null, postOnceLocks = 0, activeLocks = [];
+      let schedulerLock = null, postOnceLocks = 0, activeLocks = [];
     if (LockModel) {
       try {
         const locks = await LockModel.find({}).limit(50).lean();
@@ -1201,7 +1203,7 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       }
     } catch {}
 
-    // Render info via /health
+      // Render info via /health
     let render = {};
     try {
       const port = process.env.PORT || '10000';
@@ -1210,8 +1212,28 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       if (h) render = { version: h.version || null, buildTime: h.buildTime || null };
     } catch {}
 
-    const instanceId = Math.random().toString(36).slice(2, 10);
-    return res.json({
+      const instanceId = Math.random().toString(36).slice(2, 10);
+
+      // Current CT time and next burst window (dup of /api/scheduler/health for convenience)
+      let ctNow = null, nextBurstStartIso = null, nextBurstEndIso = null, inBurstWindow = false;
+      try {
+        const tz = settings.timeZone || 'America/Chicago';
+        const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+        const parts = fmt.formatToParts(now).reduce((a,p)=>(a[p.type]=p.value,a),{});
+        ctNow = `${parts.hour}:${parts.minute}`;
+        const cfg = settings.burstModeConfig || {};
+        const start = String(cfg.startTime || '18:00');
+        const end = String(cfg.endTime || '19:00');
+        function toMinutes(hhmm){ const [h,m]=String(hhmm).split(':').map(Number); return (h||0)*60+(m||0); }
+        const curM = toMinutes(ctNow); const sM = toMinutes(start); const eM = toMinutes(end);
+        inBurstWindow = !!settings.burstModeEnabled && ((sM <= eM) ? (curM >= sM && curM < eM) : (curM >= sM || curM < eM));
+        const today = new Date(now);
+        function atHM(base, hm){ const d = new Date(base); const [h,m]=String(hm).split(':').map(Number); d.setHours(h||0,m||0,0,0); return d; }
+        let sDt = atHM(today, start); let eDt = atHM(today, end); if (eDt <= sDt) { const plus1=new Date(sDt); plus1.setDate(plus1.getDate()+1); eDt = atHM(plus1, end); }
+        if (now > eDt) { const next = new Date(today); next.setDate(next.getDate()+1); sDt = atHM(next, start); eDt = atHM(next, end); }
+        nextBurstStartIso = sDt.toISOString(); nextBurstEndIso = eDt.toISOString();
+      } catch {}
+      return res.json({
       nowIso,
       instanceId,
       env: { NODE_ENV: process.env.NODE_ENV, RENDER: (process.env.RENDER || process.env.RENDER_SERVICE_ID) ? 'true' : 'false' },
@@ -1222,7 +1244,11 @@ app.get('/api/diag/autopilot-report', async (req, res) => {
       postsLastHour,
       countersToday,
       locks: { schedulerLock, postOnceLocks },
-      render
+        render,
+        ctNow,
+        inBurstWindow,
+        nextBurstStartIso,
+        nextBurstEndIso
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: e?.message || 'failed to build report' });
@@ -1354,6 +1380,7 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const hourlyLimit = Number(settings.hourlyLimit || 3);
     const dailyLimit = Number(settings.dailyLimit || settings.maxPosts || 5);
     const repostDelayDays = Number(settings.repostDelayDays || 30);
+      const minViews = Number(settings.minimumIGViewsToRepost || 0);
     const tz = settings.timeZone || 'America/Chicago';
     const threshold = Math.max(3, hourlyLimit);
     const targetQueue = Math.min(Number(settings.maxPosts || 10), 20);
@@ -1368,7 +1395,7 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const limit = Number((req.body && req.body.scrapeLimit) || (settings?.burstModeConfig?.scrapeLimit) || 30);
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
-    const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
+      const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
     const daysAgo = new Date(Date.now() - repostDelayDays * 24 * 60 * 60 * 1000);
 
     // Build exclusion sets
@@ -1381,13 +1408,16 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const queuedIds = new Set((inQueue || []).map(r => String(r.originalVideoId || '')));
 
     const toAdd = [];
-    for (const v of (candidates || [])) {
+      for (const v of (candidates || [])) {
       const sourceId = String(v.id || '');
       if (!sourceId) continue;
       if (postedIds.has(sourceId)) continue;
       if (queuedIds.has(sourceId)) continue;
-      // Basic engagement floor if provided
-      if (typeof settings.minViews === 'number' && Number(v.views || 0) < Number(settings.minViews)) continue;
+        // Enforce minimum IG views strictly
+        if (minViews && Number(v.views || v.viewCount || 0) < minViews) continue;
+        // Skip if missing S3/URL video
+        const hasUrl = !!(v.url || v.videoUrl || v.s3Url);
+        if (!hasUrl) continue;
       toAdd.push({ sourceId, videoUrl: v.url, caption: v.caption || '', engagement: Number(v.engagement || 0) });
       if (toAdd.length >= (targetQueue - scheduledCount)) break;
     }
