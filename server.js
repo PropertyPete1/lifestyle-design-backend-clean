@@ -1417,15 +1417,16 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
     const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
-    // Also fetch user's last 30 recent posts and compute visual thumbnail hashes to block by visual similarity
-    const { generateThumbnailHash } = require('./utils/instagramScraper');
+    // Also fetch user's last 30 recent posts and compute visual hashes (no sharp)
     let recent30 = [];
-    try { recent30 = await scrapeInstagramEngagement(igId, igToken, 30, true); } catch { recent30 = []; }
+    try { recent30 = await scrapeInstagramEngagement(igId, igToken, 30, false); } catch { recent30 = []; }
     const recentVisualHashes = new Set();
     for (const r of (recent30 || [])) {
       try {
-        const h = r.thumbnailHash || (r.thumbnail_url ? await generateThumbnailHash(r.thumbnail_url) : null);
-        if (h) recentVisualHashes.add(String(h));
+        const url = r.thumbnail_url || r.thumbnailUrl || r.media_url || r.url;
+        if (!url) continue;
+        const ah = await computeAverageHashFromImageUrl(url);
+        if (ah?.hash) recentVisualHashes.add(String(ah.hash));
       } catch {}
     }
     const daysAgo = new Date(Date.now() - repostDelayDays * 24 * 60 * 60 * 1000);
