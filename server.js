@@ -513,6 +513,8 @@ app.get('/api/autopilot/queue', async (req, res) => {
       s3Url: item.s3Url || item.videoUrl || null,
       videoSource: item.s3Url ? 's3' : (item.videoUrl ? 'cdn' : 'none'),
       engagement: item.engagement || 0,
+      likes: item.engagement || 0,
+      visualHash: item.visualHash || item.thumbnailHash || null,
       originalVideoId: item.originalVideoId
     }));
     
@@ -1413,10 +1415,10 @@ app.post('/api/autopilot/refill', async (req, res) => {
     // Fetch candidates from recent IG posts
     const { scrapeInstagramEngagement } = require('./utils/instagramScraper');
     const { computeAverageHashFromImageUrl, hammingDistanceHex } = require('./utils/visualHash');
-    const limit = Number((req.body && req.body.scrapeLimit) || (settings?.burstModeConfig?.scrapeLimit) || 30);
+    const igScrapeMax = Number((req.body && (req.body.igScrapeMax || req.body.scrapeLimit)) || (settings?.igScrapeMax) || (settings?.burstModeConfig?.scrapeLimit) || 30);
     const igId = settings.igBusinessId; const igToken = settings.instagramToken;
     if (!igId || !igToken) return res.json({ ok: false, error: 'missing ig credentials' });
-    const candidates = await scrapeInstagramEngagement(igId, igToken, limit).catch(() => []);
+    const candidates = await scrapeInstagramEngagement(igId, igToken, igScrapeMax).catch(() => []);
     // Also fetch user's last 30 recent posts and compute visual hashes (no sharp)
     let recent30 = [];
     try { recent30 = await scrapeInstagramEngagement(igId, igToken, 30, false); } catch { recent30 = []; }
@@ -1429,21 +1431,19 @@ app.post('/api/autopilot/refill', async (req, res) => {
         if (ah?.hash) recentVisualHashes.add(String(ah.hash));
       } catch {}
     }
-    const daysAgo = new Date(Date.now() - repostDelayDays * 24 * 60 * 60 * 1000);
+    const cooldownSince = new Date(Date.now() - (Number(settings.repostCooldownDays || settings.dupLookbackDays || settings.repostDelayDays || 30) * 24 * 60 * 60 * 1000));
+    // Visual-hash cooldown and scheduled hash sets
+    const postedCooldown = await SchedulerQueueModel.find({ status: { $in: ['posted','completed'] }, postedAt: { $gte: cooldownSince }, visualHash: { $exists: true } }).select('visualHash').limit(500).lean();
+    const cooldownHashes = (postedCooldown || []).map(r => String(r.visualHash));
+    const scheduledDocs = await SchedulerQueueModel.find({ status: { $in: ['scheduled','processing'] }, visualHash: { $exists: true } }).select('visualHash').limit(500).lean();
+    const scheduledHashes = (scheduledDocs || []).map(r => String(r.visualHash));
 
-    // Build exclusion sets
-    const postedRecent = await SchedulerQueueModel.find({
-      status: { $in: ['posted','completed'] },
-      postedAt: { $gte: daysAgo }
-    }).select('originalVideoId s3Url videoUrl').lean();
-    const postedIds = new Set((postedRecent || []).map(r => String(r.originalVideoId || '')));
-    const inQueue = await SchedulerQueueModel.find({ status: { $in: ['scheduled','processing'] } }).select('originalVideoId s3Url videoUrl').lean();
-    const queuedIds = new Set((inQueue || []).map(r => String(r.originalVideoId || '')));
-
+    const examined = candidates.length;
     const toAdd = [];
+    const nearMisses = [];
     for (const v of (candidates || [])) {
-      const sourceId = String(v.id || '');
-      if (!sourceId) continue;
+      const likes = Number(v.likes || v.like_count || 0);
+      if (minLikes && likes < minLikes) { if (nearMisses.length < 10) nearMisses.push({ id: String(v.id || ''), likes }); continue; }
       // Visual hash block against recent with distance threshold
       try {
         let vhash = v.thumbnailHash || null;
@@ -1452,48 +1452,53 @@ app.post('/api/autopilot/refill', async (req, res) => {
           vhash = ah.hash;
         }
         if (!vhash) continue; // no thumbnail → skip
-        let isDup = false;
         const maxD = Number(settings.dupHashMaxDistance || 6);
-        for (const prev of recentVisualHashes) {
-          if (hammingDistanceHex(vhash, prev) <= maxD) { isDup = true; break; }
-        }
-        if (isDup) continue;
+        for (const prev of recentVisualHashes) { if (hammingDistanceHex(vhash, prev) <= maxD) { vhash = null; break; } }
+        if (!vhash) continue;
+        let dupCooldown = false; for (const h of cooldownHashes) { if (hammingDistanceHex(vhash, h) <= maxD) { dupCooldown = true; break; } }
+        if (dupCooldown) continue;
+        let dupScheduled = false; for (const h of scheduledHashes) { if (hammingDistanceHex(vhash, h) <= maxD) { dupScheduled = true; break; } }
+        if (dupScheduled) continue;
         v._visualHash = vhash;
       } catch { continue; }
-      if (postedIds.has(sourceId)) continue;
-      if (queuedIds.has(sourceId)) continue;
-      // Enforce minimum likes (preferred) and views (fallback)
-      if (minLikes && Number(v.likes || 0) < minLikes) continue;
-      if (!minLikes && minViews && Number(v.views || v.viewCount || 0) < minViews) continue;
-        // Skip if missing S3/URL video
-        const hasUrl = !!(v.url || v.videoUrl || v.s3Url);
-        if (!hasUrl) continue;
-      toAdd.push({ sourceId, videoUrl: v.url, caption: v.caption || '', engagement: Number(v.engagement || 0) });
-      if (toAdd.length >= (targetQueue - scheduledCount)) break;
+      const hasUrl = !!(v.url || v.videoUrl || v.s3Url);
+      if (!hasUrl) continue;
+      toAdd.push({ id: String(v.id || ''), likes, videoUrl: v.url, caption: v.caption || '', engagement: likes, _visualHash: v._visualHash });
     }
 
     // Compute next scheduled times (CT) spaced by 1 hour
+    const want = Math.max(0, (targetQueue - scheduledCount));
+    toAdd.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    const selected = toAdd.slice(0, want);
+    const qualified = toAdd.length;
+    const previewOnly = !!(req.body && (req.body.preview === true || String(req.body.preview).toLowerCase() === 'true'));
     const scheduledIds = [];
     const now = new Date();
-    for (let i = 0; i < toAdd.length; i++) {
-      const item = toAdd[i];
-      const runAt = new Date(now.getTime() + (i + 1) * 60 * 60 * 1000);
-      const doc = await SchedulerQueueModel.create({
-        platform: 'instagram',
-        status: 'scheduled',
-        scheduledTime: runAt,
-        source: 'autopilot',
-        originalVideoId: item.sourceId,
-        videoUrl: item.videoUrl,
-        caption: item.caption,
-        engagement: item.engagement,
-        visualHash: item._visualHash || null,
-        hashVersion: item._visualHash ? 'ahash-v1' : null
-      });
-      scheduledIds.push(String(doc._id));
+    if (!previewOnly) {
+      for (let i = 0; i < selected.length; i++) {
+        const item = selected[i];
+        const runAt = new Date(now.getTime() + (i + 1) * 60 * 60 * 1000);
+        const doc = await SchedulerQueueModel.create({
+          platform: 'instagram',
+          status: 'scheduled',
+          scheduledTime: runAt,
+          source: 'autopilot',
+          originalVideoId: item.id || null,
+          videoUrl: item.videoUrl,
+          caption: item.caption,
+          engagement: item.engagement,
+          visualHash: item._visualHash || null,
+          hashVersion: item._visualHash ? 'ahash-v1' : null
+        });
+        scheduledIds.push(String(doc._id));
+      }
     }
 
-    return res.json({ ok: true, added: scheduledIds.length, scheduledCount: scheduledCount + scheduledIds.length, threshold, scheduledIds });
+    const added = previewOnly ? 0 : scheduledIds.length;
+    const shortfall = Math.max(0, want - added);
+    const shortfallReason = shortfall > 0 ? 'NOT_ENOUGH_QUALIFIED' : null;
+    console.log(`🎯 [REFILL STRICT] minLikes=${minLikes} examined=${examined} qualified=${qualified} added=${added} shortfall=${shortfall}`);
+    return res.json({ ok: true, preview: previewOnly, minLikesRequested: minLikes, examined, qualified, added, shortfall, shortfallReason, nearMisses, scheduledCount: scheduledCount + added, threshold, scheduledIds });
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message || 'refill failed' });
   }
