@@ -1439,11 +1439,11 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const scheduledHashes = (scheduledDocs || []).map(r => String(r.visualHash));
 
     const examined = candidates.length;
-    const toAdd = [];
+    const qualifiedPool = [];
+    const fallbackPool = [];
     const nearMisses = [];
     for (const v of (candidates || [])) {
       const likes = Number(v.likes || v.like_count || 0);
-      if (minLikes && likes < minLikes) { if (nearMisses.length < 10) nearMisses.push({ id: String(v.id || ''), likes }); continue; }
       // Visual hash block against recent with distance threshold
       try {
         let vhash = v.thumbnailHash || null;
@@ -1463,14 +1463,27 @@ app.post('/api/autopilot/refill', async (req, res) => {
       } catch { continue; }
       const hasUrl = !!(v.url || v.videoUrl || v.s3Url);
       if (!hasUrl) continue;
-      toAdd.push({ id: String(v.id || ''), likes, videoUrl: v.url, caption: v.caption || '', engagement: likes, _visualHash: v._visualHash });
+      const item = { id: String(v.id || ''), likes, videoUrl: v.url, caption: v.caption || '', engagement: likes, _visualHash: v._visualHash };
+      if (minLikes && likes < minLikes) {
+        if (nearMisses.length < 10) nearMisses.push({ id: item.id, likes });
+        fallbackPool.push(item);
+      } else {
+        qualifiedPool.push(item);
+      }
     }
 
     // Compute next scheduled times (CT) spaced by 1 hour
     const want = Math.max(0, (targetQueue - scheduledCount));
-    toAdd.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-    const selected = toAdd.slice(0, want);
-    const qualified = toAdd.length;
+    qualifiedPool.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    const selected = qualifiedPool.slice(0, want);
+    let fallbackUsed = false;
+    const qualified = qualifiedPool.length;
+    if (selected.length < want) {
+      const need = want - selected.length;
+      fallbackPool.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+      const fill = fallbackPool.slice(0, need);
+      if (fill.length) { selected.push(...fill); fallbackUsed = true; }
+    }
     const previewOnly = !!(req.body && (req.body.preview === true || String(req.body.preview).toLowerCase() === 'true'));
     const scheduledIds = [];
     const now = new Date();
@@ -1497,8 +1510,8 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const added = previewOnly ? 0 : scheduledIds.length;
     const shortfall = Math.max(0, want - added);
     const shortfallReason = shortfall > 0 ? 'NOT_ENOUGH_QUALIFIED' : null;
-    console.log(`🎯 [REFILL STRICT] minLikes=${minLikes} examined=${examined} qualified=${qualified} added=${added} shortfall=${shortfall}`);
-    return res.json({ ok: true, preview: previewOnly, minLikesRequested: minLikes, examined, qualified, added, shortfall, shortfallReason, nearMisses, scheduledCount: scheduledCount + added, threshold, scheduledIds });
+    console.log(`🎯 [REFILL STRICT] minLikes=${minLikes} examined=${examined} qualified=${qualified} added=${added} fallbackUsed=${fallbackUsed} shortfall=${shortfall}`);
+    return res.json({ ok: true, preview: previewOnly, minLikesRequested: minLikes, examined, qualified, added, fallbackUsed, shortfall, shortfallReason, nearMisses, scheduledCount: scheduledCount + added, threshold, scheduledIds });
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message || 'refill failed' });
   }
