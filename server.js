@@ -77,6 +77,7 @@ const settingsSchema = new mongoose.Schema({
   repostDelay: { type: Number, default: 2 },
   // Content filters
   minimumIGViewsToRepost: { type: Number, default: 0 },
+  minimumIGLikesToRepost: { type: Number, default: 0 },
   postToYouTube: { type: Boolean, default: false },
   postToInstagram: { type: Boolean, default: true },
   // Caps and controls
@@ -1388,6 +1389,7 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const dailyLimit = Number(settings.dailyLimit || settings.maxPosts || 5);
     const repostDelayDays = Number(settings.repostDelayDays || 30);
       const minViews = Number(settings.minimumIGViewsToRepost || 0);
+      const minLikes = Number(settings.minimumIGLikesToRepost || 0);
     const tz = settings.timeZone || 'America/Chicago';
     const threshold = Math.max(3, hourlyLimit);
     const targetQueue = Math.min(Number(settings.maxPosts || 10), 20);
@@ -1436,8 +1438,9 @@ app.post('/api/autopilot/refill', async (req, res) => {
       } catch {}
       if (postedIds.has(sourceId)) continue;
       if (queuedIds.has(sourceId)) continue;
-        // Enforce minimum IG views strictly
-        if (minViews && Number(v.views || v.viewCount || 0) < minViews) continue;
+      // Enforce minimum likes (preferred) and views (fallback)
+      if (minLikes && Number(v.likes || 0) < minLikes) continue;
+      if (!minLikes && minViews && Number(v.views || v.viewCount || 0) < minViews) continue;
         // Skip if missing S3/URL video
         const hasUrl = !!(v.url || v.videoUrl || v.s3Url);
         if (!hasUrl) continue;
