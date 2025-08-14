@@ -1444,6 +1444,9 @@ app.post('/api/autopilot/refill', async (req, res) => {
     const nearMisses = [];
     for (const v of (candidates || [])) {
       const likes = Number(v.likes || v.like_count || 0);
+      if (minLikes && likes < minLikes && nearMisses.length < 10) {
+        nearMisses.push({ id: String(v.id || ''), likes });
+      }
       // Visual hash block against recent with distance threshold
       try {
         let vhash = v.thumbnailHash || null;
