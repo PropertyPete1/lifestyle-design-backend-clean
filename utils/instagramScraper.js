@@ -38,10 +38,10 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 30, in
         if (media.media_type === 'VIDEO') {
           // Smart engagement estimation: likes usually represent 1-3% of views for viral content
           // For high-performing real estate videos, estimate views as likes * 50-100
-          const likes = media.like_count || 0;
+          const likes = Number(media.like_count ?? media.likes ?? 0);
           const comments = media.comments_count || 0;
-          const estimatedViews = likes * 75; // Conservative estimate
-          const engagement = estimatedViews + likes + comments;
+          const estimatedViews = Number(likes) * 75; // Conservative estimate
+          const engagement = Number(likes) + Number(comments) + Number(estimatedViews);
           
           // Debug: Log some videos to see what we're getting
           if (videos.length < 10) {
@@ -59,8 +59,8 @@ async function scrapeInstagramEngagement(businessId, accessToken, limit = 30, in
             url: media.media_url,
             thumbnailUrl: media.thumbnail_url,
             caption: media.caption || '',
-            likes: likes,
-            comments: comments,
+            likes: Number(likes),
+            comments: Number(comments),
             views: estimatedViews,
             engagement: engagement,
             timestamp: media.timestamp,
