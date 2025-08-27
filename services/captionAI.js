@@ -98,7 +98,7 @@ Rewritten:`;
     const rewrittenCaption = data.choices[0]?.message?.content?.trim() || originalCaption;
     console.log(`✅ [AI CAPTION] Generated: "${rewrittenCaption.substring(0, 50)}..."`);
     
-    return rewrittenCaption;
+    return (rewrittenCaption || '').replace(/[-–—•]+/g, ' ').replace(/\s+/g, ' ').trim();
 
   } catch (error) {
     console.error('❌ [AI CAPTION ERROR]', error);
@@ -349,7 +349,7 @@ Return ONLY the rewritten caption text.`;
 
     if (rewrittenCaption) {
       console.log('✅ [AI CAPTION] Smart caption generated successfully');
-      return rewrittenCaption;
+      return (rewrittenCaption || '').replace(/[-–—•]+/g, ' ').replace(/\s+/g, ' ').trim();
     } else {
       console.log('⚠️ [AI CAPTION] No caption returned, using modified original');
       return modifyOriginalCaption(originalCaption);
