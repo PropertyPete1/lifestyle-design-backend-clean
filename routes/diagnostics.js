@@ -11,9 +11,37 @@ router.get('/report', async (req, res) => {
     const mongoose = require('mongoose');
     const SettingsModel = mongoose.model('SettingsClean');
     const s = await SettingsModel.findOne({}).lean();
-    const igToken = s?.instagramToken;
-    const igId = s?.igBusinessId;
-    if (!igToken || !igId) return res.status(400).json({ error: 'Missing Instagram credentials' });
+
+    // Dual-key support + optional nested instagram object
+    const accessToken =
+      s?.instagramAccessToken ||
+      s?.instagramToken ||
+      s?.instagram?.accessToken ||
+      s?.instagram?.token;
+
+    const igBusinessId =
+      s?.igBusinessAccountId ||
+      s?.igBusinessId ||
+      s?.instagram?.businessAccountId ||
+      s?.instagram?.businessId;
+
+    if (!accessToken || !igBusinessId) {
+      const tried = {
+        accessTokenTried: [
+          'instagramAccessToken',
+          'instagramToken',
+          'instagram.accessToken',
+          'instagram.token'
+        ],
+        businessIdTried: [
+          'igBusinessAccountId',
+          'igBusinessId',
+          'instagram.businessAccountId',
+          'instagram.businessId'
+        ]
+      };
+      return res.status(400).json({ error: 'Missing Instagram credential(s)', details: tried });
+    }
 
     const days = Math.max(7, Number(req.query.days || 90));
     const now = new Date();
@@ -22,7 +50,7 @@ router.get('/report', async (req, res) => {
     const baselineStart = new Date(baselineEnd.getTime() - days*24*60*60*1000);
 
     async function fetchWindow(a, b) {
-      let url = `https://graph.facebook.com/v19.0/${encodeURIComponent(igId)}/media?fields=id,caption,timestamp,like_count,comments_count&limit=50&access_token=${encodeURIComponent(igToken)}`;
+      let url = `https://graph.facebook.com/v19.0/${encodeURIComponent(igBusinessId)}/media?fields=id,caption,timestamp,like_count,comments_count&limit=50&access_token=${encodeURIComponent(accessToken)}`;
       const out = [];
       while (url) {
         const r = await fetch(url);
