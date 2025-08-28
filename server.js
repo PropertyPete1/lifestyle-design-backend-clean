@@ -1330,6 +1330,10 @@ const VERSION  = readFileSafe(path.join(__dirname, 'VERSION')) || process.env.RE
 const BUILT_AT = readFileSafe(path.join(__dirname, 'BUILD_TIME')) || new Date().toISOString();
 console.log('🆕 Server booted', { version: VERSION, builtAt: BUILT_AT });
 
+
+// Diagnostics (read-only)
+try { app.use('/api/diagnostics', require('./routes/diagnostics')); } catch (e) { console.warn('diag route init failed', e?.message||e); }
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ ok: true, nowUTC: new Date().toISOString(), version: VERSION, builtAt: BUILT_AT, pid: process.pid });
